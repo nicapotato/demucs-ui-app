@@ -1,0 +1,378 @@
+name: ci
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version override for itch --userversion (leave empty to use project.conf)"
+        required: false
+        default: ""
+        type: string
+      publish_itch:
+        description: "Push zip to itch.io (no GitHub tag/release)"
+        required: false
+        default: true
+        type: boolean
+      build_platform:
+        description: "macos / windows / all"
+        required: false
+        default: "all"
+        type: choice
+        options:
+          - all
+          - macos
+          - windows
+
+concurrency:
+  group: ci-${{ github.sha }}
+  cancel-in-progress: true
+
+env:
+  ITCH_USER: nicapotato
+  ITCH_GAME: demucs-app
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  read-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -n "${INPUT_VERSION}" ]; then
+            V="${INPUT_VERSION}"
+          else
+            V=$(grep '^VERSION=' project.conf | cut -d= -f2 | tr -d '[:space:]')
+          fi
+          if [ -z "$V" ]; then
+            echo "ERROR: empty version" >&2
+            exit 1
+          fi
+          echo "version=${V}" >> "$GITHUB_OUTPUT"
+          echo "Version: ${V}"
+
+  build-and-publish:
+    runs-on: macos-latest
+    needs: read-version
+    timeout-minutes: 120
+    if: contains(fromJSON('["macos","all"]'), github.event.inputs.build_platform)
+    env:
+      BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+      VERSION: ${{ needs.read-version.outputs.version }}
+    steps:
+      - name: Checkout demucs-ui-app
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install Homebrew deps
+        run: |
+          set -euo pipefail
+          brew install libvorbis libogg ffmpeg
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+      - name: Wire externals (raylib + checked-in prebuilt rocksmith-psarc)
+        run: |
+          set -euo pipefail
+          chmod +x app/scripts/*.sh
+          bash app/scripts/setup_externals.sh
+
+      - name: Build GUI (CMake Release)
+        run: make -C app build
+
+      - name: Smoke --version
+        run: |
+          set -euo pipefail
+          ./app/build/demucs_mlx_app --version
+          ./app/build/demucs_mlx_app --version | grep -F "${VERSION}"
+
+      - name: Install Python package (convert + freeze deps)
+        run: |
+          set -euo pipefail
+          uv venv workers/mlx/.venv --python "${{ env.PYTHON_VERSION }}"
+          source workers/mlx/.venv/bin/activate
+          (cd workers/mlx && uv pip install -e '.[convert]' lameenc pyinstaller)
+
+      - name: Restore MLX model cache
+        uses: actions/cache@v4
+        id: model-cache
+        with:
+          path: app/models/htdemucs_6s_mlx.pkl
+          key: htdemucs-6s-mlx-${{ hashFiles('workers/mlx/demucs_mlx/__init__.py', 'workers/mlx/demucs_mlx/remote/htdemucs_6s.yaml') }}
+
+      - name: Convert / ensure MLX weights
+        if: steps.model-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          source workers/mlx/.venv/bin/activate
+          make -C app models
+          test -f app/models/htdemucs_6s_mlx.pkl
+
+      - name: Freeze worker (PyInstaller)
+        run: |
+          set -euo pipefail
+          source workers/mlx/.venv/bin/activate
+          make -C app worker
+
+      - name: Bundle .app + zip
+        run: |
+          set -euo pipefail
+          bash app/scripts/build_app.sh
+          test -f "app/dist/demucs-mlx-arm-mac-silicon.zip"
+          plutil -p "app/dist/DemucsMlxArmMacSilicon.app/Contents/Info.plist" | grep -F "${VERSION}"
+
+      - name: Smoke bundled app headless (5s tone -> 6 stems)
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/dmx_ci_in /tmp/dmx_ci_out
+          ffmpeg -y -hide_banner -loglevel error -f lavfi -i "sine=frequency=440:duration=5" \
+            -ac 2 -ar 44100 /tmp/dmx_ci_in/tone5s.mp3
+          "app/dist/DemucsMlxArmMacSilicon.app/Contents/MacOS/DemucsMlxArmMacSilicon" \
+            --headless /tmp/dmx_ci_in/tone5s.mp3 --out /tmp/dmx_ci_out --mp3
+          for s in drums bass other vocals guitar piano; do
+            test -f "/tmp/dmx_ci_out/tone5s/${s}.mp3"
+          done
+          ls -la /tmp/dmx_ci_out/tone5s/
+
+      - name: Prepare zip artifact
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          cp "app/dist/demucs-mlx-arm-mac-silicon.zip" release-assets/
+          (
+            cd release-assets
+            shasum -a 256 demucs-mlx-arm-mac-silicon.zip | tee demucs-mlx-arm-mac-silicon.zip.sha256
+          )
+          ls -la release-assets/
+
+      - name: Upload zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: demucs-mlx-arm-mac-silicon-zip
+          path: release-assets/*
+          if-no-files-found: error
+
+      - name: Setup butler
+        if: github.event.inputs.publish_itch == 'true'
+        uses: remarkablegames/setup-butler@v2
+        with:
+          butler-version: LATEST
+
+      - name: Push to itch.io
+        if: github.event.inputs.publish_itch == 'true'
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BUTLER_API_KEY:-}" ]; then
+            echo "ERROR: BUTLER_API_KEY secret is not set" >&2
+            exit 1
+          fi
+          butler push release-assets/demucs-mlx-arm-mac-silicon.zip \
+            "${ITCH_USER}/${ITCH_GAME}:mlx-arm-mac-silicon" \
+            --userversion "${VERSION}"
+          echo "Pushed to itch.io ${ITCH_USER}/${ITCH_GAME}:mlx-arm-mac-silicon @ ${VERSION}"
+
+  build-and-publish-windows:
+    runs-on: windows-latest
+    needs: read-version
+    timeout-minutes: 180
+    if: contains(fromJSON('["windows","all"]'), github.event.inputs.build_platform)
+    env:
+      BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+      VERSION: ${{ needs.read-version.outputs.version }}
+      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+    steps:
+      - name: Checkout demucs-ui-app
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Clone and bootstrap vcpkg
+        shell: cmd
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git "%GITHUB_WORKSPACE%\vcpkg"
+          call "%GITHUB_WORKSPACE%\vcpkg\bootstrap-vcpkg.bat"
+
+      - name: Restore vcpkg downloads and installed trees
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/vcpkg/downloads
+            ${{ github.workspace }}/vcpkg/installed
+          key: vcpkg-${{ runner.os }}-x64-dmx-static-v1
+
+      - name: Install vcpkg ports
+        shell: cmd
+        run: |
+          "%GITHUB_WORKSPACE%\vcpkg\vcpkg.exe" install zlib:x64-windows-static libogg:x64-windows-static libvorbis:x64-windows-static
+          if errorlevel 1 exit /b 1
+
+      - name: Restore vgmstream checkout
+        uses: actions/cache@v4
+        with:
+          path: app/external/rocksmith-psarc-src/external/vgmstream
+          key: vgmstream-${{ hashFiles('app/scripts/vendor_vgmstream.sh') }}
+
+      - name: Wire externals (raylib + vgmstream)
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x app/scripts/*.sh
+          bash app/scripts/setup_externals.sh
+
+      - name: Configure and build GUI (CMake Release, MSVC + vcpkg)
+        shell: cmd
+        working-directory: app
+        run: |
+          set "TOOLCHAIN=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake"
+          cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=%TOOLCHAIN% -DVCPKG_TARGET_TRIPLET=x64-windows-static -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -A x64
+          if errorlevel 1 exit /b 1
+          cmake --build build --config Release --parallel -- /verbosity:minimal /nologo
+          if errorlevel 1 exit /b 1
+
+      - name: Smoke --version
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXE="app/build/Release/DemucsCudaWindows.exe"
+          test -f "$EXE"
+          "$EXE" --version
+          "$EXE" --version | grep -F "${VERSION}"
+
+      - name: Assert GUI is /MT (no VC++ redist DLLs)
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          $dumpbin = & $vswhere -latest -find "**\dumpbin.exe" | Select-Object -First 1
+          if (-not $dumpbin) { Write-Error "dumpbin.exe not found"; exit 1 }
+          $exe = "app\build\Release\DemucsCudaWindows.exe"
+          $deps = & $dumpbin /DEPENDENTS $exe | Out-String
+          Write-Host $deps
+          foreach ($dll in @("VCRUNTIME140.dll", "VCRUNTIME140_1.dll", "MSVCP140.dll", "MSVCP140_1.dll", "MSVCP140_2.dll")) {
+            if ($deps -match [regex]::Escape($dll)) {
+              Write-Error "DemucsCudaWindows.exe still depends on $dll; expected static /MT"
+              exit 1
+            }
+          }
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install CUDA torch + Demucs + freeze deps
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch==2.2.2 torchaudio==2.2.2 --index-url https://download.pytorch.org/whl/cu121
+          python -m pip install -r workers/windows/requirements-windows.txt
+          $env:PYTHONPATH = (Join-Path (Get-Location) "workers\windows")
+
+      - name: Restore Demucs torch checkpoint cache
+        uses: actions/cache@v4
+        id: torch-model-cache
+        with:
+          path: |
+            workers/windows/models/torch
+            workers/windows/models/hf
+          key: htdemucs-6s-torch-hf-${{ hashFiles('workers/windows/requirements-windows.txt', 'workers/windows/demucs_torch/separate.py') }}
+
+      - name: Prefetch official Demucs weights
+        if: steps.torch-model-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $env:DEMUCS_TORCH_PYTHON = (Get-Command python).Source
+          pwsh -File workers/windows/scripts/prefetch_torch_models.ps1
+
+      - name: Freeze torch worker (PyInstaller)
+        shell: pwsh
+        run: |
+          $env:DEMUCS_TORCH_PYTHON = (Get-Command python).Source
+          $env:PYTHONPATH = (Join-Path (Get-Location) "workers\windows")
+          pwsh -File workers/windows/scripts/freeze_worker_torch.ps1
+          New-Item -ItemType Directory -Force -Path app/dist/worker | Out-Null
+          Copy-Item -Recurse -Force workers/windows/dist/worker/demucs_torch_worker app/dist/worker/
+          Copy-Item -Recurse -Force workers/windows/models app/models
+
+      - name: Package Windows zip
+        id: package
+        shell: pwsh
+        run: |
+          pwsh -File app/scripts/build_windows.ps1
+          if (-not (Test-Path "app/dist/demucs-cuda-windows.zip")) { exit 1 }
+
+      - name: Install ffmpeg
+        shell: cmd
+        run: choco install ffmpeg --no-progress -y
+
+      - name: Smoke bundled app headless (5s tone -> 6 stems, CPU)
+        timeout-minutes: 30
+        shell: pwsh
+        env:
+          DEMUCS_DEVICE: cpu
+        run: |
+          $in = Join-Path $env:TEMP "dmx_ci_in"
+          $out = Join-Path $env:TEMP "dmx_ci_out"
+          New-Item -ItemType Directory -Force -Path $in, $out | Out-Null
+          ffmpeg -y -hide_banner -loglevel error -f lavfi -i "sine=frequency=440:duration=5" -ac 2 -ar 44100 "$in\tone5s.mp3"
+          $env:DEMUCS_DEVICE = "cpu"
+          & "app\dist\DemucsCudaWindows\DemucsCudaWindows.exe" --headless "$in\tone5s.mp3" --out $out --mp3
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($s in @("drums","bass","other","vocals","guitar","piano")) {
+            $p = Join-Path $out "tone5s\$s.mp3"
+            if (-not (Test-Path $p)) { Write-Error "missing $p"; exit 1 }
+          }
+          Get-ChildItem "$out\tone5s"
+
+      - name: Prepare zip artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          cp app/dist/demucs-cuda-windows.zip release-assets/
+          (
+            cd release-assets
+            sha256sum demucs-cuda-windows.zip | tee demucs-cuda-windows.zip.sha256
+          )
+
+      - name: Upload Windows zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: demucs-cuda-windows-zip
+          path: release-assets/*
+          if-no-files-found: error
+
+      - name: Setup butler
+        if: github.event.inputs.publish_itch == 'true'
+        uses: remarkablegames/setup-butler@v2
+        with:
+          butler-version: LATEST
+
+      - name: Push to itch.io (Windows)
+        if: github.event.inputs.publish_itch == 'true'
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${BUTLER_API_KEY:-}" ]; then
+            echo "ERROR: BUTLER_API_KEY secret is not set" >&2
+            exit 1
+          fi
+          butler push release-assets/demucs-cuda-windows.zip \
+            "${ITCH_USER}/${ITCH_GAME}:cuda-windows" \
+            --userversion "${VERSION}"
+          echo "Pushed to itch.io ${ITCH_USER}/${ITCH_GAME}:cuda-windows @ ${VERSION}"

@@ -1,0 +1,24 @@
+.venv/
+__pycache__/
+*.egg-info/
+dist/
+app/build/
+app/dist/
+app/models/*.pkl
+app/models/torch/
+app/models/hf/
+app/testdata/
+.DS_Store
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Vendored raylib (cloned by app/scripts/vendor_raylib.sh)
+app/external/raylib-master
+
+# Optional local symlink to a full rocknroller rocksmith-psarc checkout
+app/external/rocksmith-psarc
+
+app/external/rocksmith-psarc-src/external/vgmstream
+app/external/rocksmith-psarc-src/.vgmstream-cmake-build
+app/external/rocksmith-psarc-src/.vgmstream-cmake-build-wasm
