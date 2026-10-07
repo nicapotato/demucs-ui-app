@@ -1,6 +1,6 @@
 # Windows x64 rocksmith-psarc prebuilts
 
-MSVC `.lib` files used by the Windows DemucsMLX GUI so CI does not need the private
+MSVC `.lib` files used by the Windows Demucs CUDA GUI so CI does not need the private
 `rocknroller` checkout.
 
 | File | Role |
