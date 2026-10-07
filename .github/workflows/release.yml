@@ -112,29 +112,29 @@ jobs:
       - name: Install Python package (convert + freeze deps)
         run: |
           set -euo pipefail
-          uv venv workers/mlx/.venv --python "${{ env.PYTHON_VERSION }}"
-          source workers/mlx/.venv/bin/activate
-          (cd workers/mlx && uv pip install -e '.[convert]' lameenc pyinstaller)
+          uv venv workers/demucs-mac-silicon/.venv --python "${{ env.PYTHON_VERSION }}"
+          source workers/demucs-mac-silicon/.venv/bin/activate
+          (cd workers/demucs-mac-silicon && uv pip install -e '.[convert]' lameenc pyinstaller)
 
       - name: Restore MLX model cache
         uses: actions/cache@v4
         id: model-cache
         with:
           path: app/models/htdemucs_6s_mlx.pkl
-          key: htdemucs-6s-mlx-${{ hashFiles('workers/mlx/demucs_mlx/__init__.py', 'workers/mlx/demucs_mlx/remote/htdemucs_6s.yaml') }}
+          key: htdemucs-6s-mlx-${{ hashFiles('workers/demucs-mac-silicon/demucs_mlx/__init__.py', 'workers/demucs-mac-silicon/demucs_mlx/remote/htdemucs_6s.yaml') }}
 
       - name: Convert / ensure MLX weights
         if: steps.model-cache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
-          source workers/mlx/.venv/bin/activate
+          source workers/demucs-mac-silicon/.venv/bin/activate
           make -C app models
           test -f app/models/htdemucs_6s_mlx.pkl
 
       - name: Freeze worker (PyInstaller)
         run: |
           set -euo pipefail
-          source workers/mlx/.venv/bin/activate
+          source workers/demucs-mac-silicon/.venv/bin/activate
           make -C app worker
 
       - name: Bundle .app + zip
@@ -290,34 +290,34 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install torch==2.2.2 torchaudio==2.2.2 --index-url https://download.pytorch.org/whl/cu121
-          python -m pip install -r workers/windows/requirements-windows.txt
-          $env:PYTHONPATH = (Join-Path (Get-Location) "workers\windows")
+          python -m pip install -r workers/demucs-windows/requirements-windows.txt
+          $env:PYTHONPATH = (Join-Path (Get-Location) "workers\demucs-windows")
 
       - name: Restore Demucs torch checkpoint cache
         uses: actions/cache@v4
         id: torch-model-cache
         with:
           path: |
-            workers/windows/models/torch
-            workers/windows/models/hf
-          key: htdemucs-6s-torch-hf-${{ hashFiles('workers/windows/requirements-windows.txt', 'workers/windows/demucs_torch/separate.py') }}
+            workers/demucs-windows/models/torch
+            workers/demucs-windows/models/hf
+          key: htdemucs-6s-torch-hf-${{ hashFiles('workers/demucs-windows/requirements-windows.txt', 'workers/demucs-windows/demucs_torch/separate.py') }}
 
       - name: Prefetch official Demucs weights
         if: steps.torch-model-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           $env:DEMUCS_TORCH_PYTHON = (Get-Command python).Source
-          pwsh -File workers/windows/scripts/prefetch_torch_models.ps1
+          pwsh -File workers/demucs-windows/scripts/prefetch_torch_models.ps1
 
       - name: Freeze torch worker (PyInstaller)
         shell: pwsh
         run: |
           $env:DEMUCS_TORCH_PYTHON = (Get-Command python).Source
-          $env:PYTHONPATH = (Join-Path (Get-Location) "workers\windows")
-          pwsh -File workers/windows/scripts/freeze_worker_torch.ps1
+          $env:PYTHONPATH = (Join-Path (Get-Location) "workers\demucs-windows")
+          pwsh -File workers/demucs-windows/scripts/freeze_worker_torch.ps1
           New-Item -ItemType Directory -Force -Path app/dist/worker | Out-Null
-          Copy-Item -Recurse -Force workers/windows/dist/worker/demucs_torch_worker app/dist/worker/
-          Copy-Item -Recurse -Force workers/windows/models app/models
+          Copy-Item -Recurse -Force workers/demucs-windows/dist/worker/demucs_torch_worker app/dist/worker/
+          Copy-Item -Recurse -Force workers/demucs-windows/models app/models
 
       - name: Package Windows zip
         id: package

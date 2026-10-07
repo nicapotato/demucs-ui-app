@@ -2,8 +2,8 @@
 
 Standalone raylib GUI for Demucs stem separation.
 
-- **macOS Apple Silicon:** [demucs-mac-silicon](https://github.com/nicapotato/demucs-mac-silicon) (MLX + Metal) via git submodule `workers/mlx`
-- **Windows x86_64:** [demucs-windows](https://github.com/nicapotato/demucs-windows) (official Demucs + CUDA) via git submodule `workers/windows`
+- **macOS Apple Silicon:** [demucs-mac-silicon](https://github.com/nicapotato/demucs-mac-silicon) (MLX + Metal) via git submodule `workers/demucs-mac-silicon`
+- **Windows x86_64:** [demucs-windows](https://github.com/nicapotato/demucs-windows) (official Demucs + CUDA) via git submodule `workers/demucs-windows`
 
 Version: [`project.conf`](project.conf). Product names:
 
@@ -29,7 +29,7 @@ git submodule update --init --recursive
 ```bash
 git submodule update --init --recursive
 # MLX worker venv
-(cd workers/mlx && uv venv .venv --python 3.12 && source .venv/bin/activate && uv pip install -e '.[convert]' lameenc pyinstaller)
+(cd workers/demucs-mac-silicon && uv venv .venv --python 3.12 && source .venv/bin/activate && uv pip install -e '.[convert]' lameenc pyinstaller)
 
 make -C app externals
 make -C app models
@@ -45,13 +45,13 @@ git submodule update --init --recursive
 cmake -B app/build -S app -DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows-static -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -A x64
 cmake --build app/build --config Release --parallel
 python -m pip install torch==2.2.2 torchaudio==2.2.2 --index-url https://download.pytorch.org/whl/cu121
-python -m pip install -r workers/windows/requirements-windows.txt
-$env:PYTHONPATH = (Resolve-Path workers/windows).Path
+python -m pip install -r workers/demucs-windows/requirements-windows.txt
+$env:PYTHONPATH = (Resolve-Path workers/demucs-windows).Path
 $env:DEMUCS_TORCH_PYTHON = (Get-Command python).Source
-pwsh -File workers/windows/scripts/prefetch_torch_models.ps1
-pwsh -File workers/windows/scripts/freeze_worker_torch.ps1
+pwsh -File workers/demucs-windows/scripts/prefetch_torch_models.ps1
+pwsh -File workers/demucs-windows/scripts/freeze_worker_torch.ps1
 New-Item -ItemType Directory -Force -Path app/dist/worker | Out-Null
-Copy-Item -Recurse -Force workers/windows/dist/worker/demucs_torch_worker app/dist/worker/
+Copy-Item -Recurse -Force workers/demucs-windows/dist/worker/demucs_torch_worker app/dist/worker/
 pwsh -File app/scripts/build_windows.ps1
 # → app/dist/demucs-cuda-windows.zip
 ```

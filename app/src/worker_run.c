@@ -57,6 +57,7 @@ int dmx_worker_run_job(const DmxWorkerConfig *cfg, DmxJob *job, DmxWorkerLive *l
       setenv("DEMUCS_MLX_CACHE", cfg->model_cache_dir, 1);
       setenv("DEMUCS_TORCH_CACHE", cfg->model_cache_dir, 1);
     }
+    dmx_worker_apply_dev_pythonpath(cfg);
 
     char batch_buf[32];
     snprintf(batch_buf, sizeof batch_buf, "%d", cfg->batch_size > 0 ? cfg->batch_size : 8);

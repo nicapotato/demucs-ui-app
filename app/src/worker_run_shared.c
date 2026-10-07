@@ -42,6 +42,82 @@ int dmx_worker_file_exists(const char *p) {
   return p && p[0] && dmx_access(p, 0) == 0;
 }
 
+void dmx_worker_apply_dev_pythonpath(const DmxWorkerConfig *cfg) {
+  if (!cfg || !cfg->module_or_empty[0] || !cfg->python_or_worker[0]) {
+    return;
+  }
+
+  const char *py = cfg->python_or_worker;
+  const char *marker = strstr(py, "/.venv/");
+#ifdef _WIN32
+  if (!marker) {
+    marker = strstr(py, "\\.venv\\");
+  }
+  if (!marker) {
+    marker = strstr(py, "\\.venv/");
+  }
+  if (!marker) {
+    marker = strstr(py, "/.venv\\");
+  }
+#endif
+  if (!marker) {
+    return;
+  }
+
+  size_t n = (size_t)(marker - py);
+  if (n == 0 || n >= DMX_PATH_MAX) {
+    fprintf(stderr, "dmx_worker: cannot derive PYTHONPATH from %s\n", py);
+    return;
+  }
+
+  char root[DMX_PATH_MAX];
+  memcpy(root, py, n);
+  root[n] = '\0';
+
+  char pkg_mlx[DMX_PATH_MAX];
+  char pkg_torch[DMX_PATH_MAX];
+#ifdef _WIN32
+  snprintf(pkg_mlx, sizeof pkg_mlx, "%s\\demucs_mlx", root);
+  snprintf(pkg_torch, sizeof pkg_torch, "%s\\demucs_torch", root);
+#else
+  snprintf(pkg_mlx, sizeof pkg_mlx, "%s/demucs_mlx", root);
+  snprintf(pkg_torch, sizeof pkg_torch, "%s/demucs_torch", root);
+#endif
+  if (!dmx_worker_file_exists(pkg_mlx) && !dmx_worker_file_exists(pkg_torch)) {
+    fprintf(stderr,
+            "dmx_worker: %s has no demucs_mlx or demucs_torch source; PYTHONPATH not set\n",
+            root);
+    return;
+  }
+
+  const char *old = getenv("PYTHONPATH");
+  char combined[DMX_PATH_MAX * 2];
+  int wrote;
+  if (old && old[0]) {
+#ifdef _WIN32
+    wrote = snprintf(combined, sizeof combined, "%s;%s", root, old);
+#else
+    wrote = snprintf(combined, sizeof combined, "%s:%s", root, old);
+#endif
+  } else {
+    wrote = snprintf(combined, sizeof combined, "%s", root);
+  }
+  if (wrote < 0 || (size_t)wrote >= sizeof combined) {
+    fprintf(stderr, "dmx_worker: PYTHONPATH overflow\n");
+    return;
+  }
+
+#ifdef _WIN32
+  if (!SetEnvironmentVariableA("PYTHONPATH", combined)) {
+    fprintf(stderr, "dmx_worker: SetEnvironmentVariable PYTHONPATH failed\n");
+  }
+#else
+  if (setenv("PYTHONPATH", combined, 1) != 0) {
+    fprintf(stderr, "dmx_worker: setenv PYTHONPATH failed\n");
+  }
+#endif
+}
+
 void dmx_worker_dirname_copy(const char *path, char *out, size_t out_sz) {
   snprintf(out, out_sz, "%s", path);
   char *slash = strrchr(out, '/');
@@ -139,13 +215,11 @@ int dmx_worker_resolve(DmxWorkerConfig *cfg, char *err, size_t err_sz) {
       try_path(cfg, candidate, NULL);
     }
     if (!dmx_worker_file_exists(cfg->python_or_worker)) {
-      snprintf(candidate, sizeof candidate, "%s\\..\\..\\..\\.venv\\Scripts\\python.exe", exe_dir);
+      snprintf(candidate, sizeof candidate,
+               "%s\\..\\..\\workers\\demucs-windows\\.venv\\Scripts\\python.exe", exe_dir);
       if (!try_path(cfg, candidate, "demucs_torch.separate")) {
-        snprintf(candidate, sizeof candidate, "%s\\..\\..\\.venv\\Scripts\\python.exe", exe_dir);
-        if (!try_path(cfg, candidate, "demucs_torch.separate")) {
-          snprintf(err, err_sz, "No demucs worker found. Set DEMUCS_TORCH_PYTHON or DEMUCS_TORCH_WORKER.");
-          return -1;
-        }
+        snprintf(err, err_sz, "No demucs worker found. Set DEMUCS_TORCH_PYTHON or DEMUCS_TORCH_WORKER.");
+        return -1;
       }
     }
   }
@@ -172,13 +246,11 @@ int dmx_worker_resolve(DmxWorkerConfig *cfg, char *err, size_t err_sz) {
       }
     }
     if (!dmx_worker_file_exists(cfg->python_or_worker)) {
-      snprintf(candidate, sizeof candidate, "%s/../../.venv/bin/python", exe_dir);
+      snprintf(candidate, sizeof candidate,
+               "%s/../../workers/demucs-mac-silicon/.venv/bin/python", exe_dir);
       if (!try_path(cfg, candidate, "demucs_mlx.separate")) {
-        snprintf(candidate, sizeof candidate, "%s/../../../.venv/bin/python", exe_dir);
-        if (!try_path(cfg, candidate, "demucs_mlx.separate")) {
-          snprintf(err, err_sz, "No demucs worker found. Set DEMUCS_MLX_PYTHON or DEMUCS_MLX_WORKER.");
-          return -1;
-        }
+        snprintf(err, err_sz, "No demucs worker found. Set DEMUCS_MLX_PYTHON or DEMUCS_MLX_WORKER.");
+        return -1;
       }
     }
   }

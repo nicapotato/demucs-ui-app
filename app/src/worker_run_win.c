@@ -119,6 +119,7 @@ int dmx_worker_run_job(const DmxWorkerConfig *cfg, DmxJob *job, DmxWorkerLive *l
     snprintf(hf_hub, sizeof hf_hub, "%s\\hf\\hub", cfg->model_cache_dir);
     SetEnvironmentVariableA("HUGGINGFACE_HUB_CACHE", hf_hub);
   }
+  dmx_worker_apply_dev_pythonpath(cfg);
 
   char batch_buf[32];
   snprintf(batch_buf, sizeof batch_buf, "%d", cfg->batch_size > 0 ? cfg->batch_size : 8);

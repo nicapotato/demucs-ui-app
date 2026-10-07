@@ -1,11 +1,12 @@
 # demucs-ui-app (raylib GUI). Workers live in git submodules.
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 REPO := $(abspath $(ROOT)/..)
-MLX := $(REPO)/workers/mlx
-WINW := $(REPO)/workers/windows
+MLX := $(REPO)/workers/demucs-mac-silicon
+WINW := $(REPO)/workers/demucs-windows
 BUILD := $(ROOT)/build
 BIN := $(BUILD)/demucs_mlx_app
 PYTHON := $(MLX)/.venv/bin/python
+RUN_ENV := DEMUCS_MLX_PYTHON="$(PYTHON)" DEMUCS_MLX_CACHE="$(ROOT)/models" PYTHONPATH="$(MLX)"
 
 .PHONY: all configure build run clean bundle worker worker-torch models verify-mp3 verify-psarc verify-psarc-mac externals version
 
@@ -27,18 +28,17 @@ version: build
 	"$(BIN)" --version
 
 run: build
-	DEMUCS_MLX_PYTHON="$(PYTHON)" DEMUCS_MLX_CACHE="$(ROOT)/models" "$(BIN)"
+	@test -d "$(MLX)/demucs_mlx" || (echo "ERROR: missing workers/demucs-mac-silicon submodule" >&2; exit 1)
+	$(RUN_ENV) "$(BIN)"
 
 # Usage: make process FILES="a.mp3 b.psarc" OUT=~/Documents/psarc/stems
 process: build
 	@test -n "$(FILES)" || (echo "Usage: make process FILES='song.mp3' OUT=~/Documents/psarc/stems"; exit 1)
-	DEMUCS_MLX_PYTHON="$(PYTHON)" DEMUCS_MLX_CACHE="$(ROOT)/models" \
-		"$(BIN)" $(FILES) --out "$(or $(OUT),$(HOME)/Documents/psarc/stems)" --mp3
+	$(RUN_ENV) "$(BIN)" $(FILES) --out "$(or $(OUT),$(HOME)/Documents/psarc/stems)" --mp3
 
 verify-mp3: build
 	@mkdir -p "$(ROOT)/build/verify_out"
-	DEMUCS_MLX_PYTHON="$(PYTHON)" DEMUCS_MLX_CACHE="$(ROOT)/models" \
-		"$(BIN)" "$(ROOT)/testdata/short_20s.mp3" --out "$(ROOT)/build/verify_out" --mp3
+	$(RUN_ENV) "$(BIN)" "$(ROOT)/testdata/short_20s.mp3" --out "$(ROOT)/build/verify_out" --mp3
 	@ls -la "$(ROOT)/build/verify_out/short_20s/"
 	@test -f "$(ROOT)/build/verify_out/short_20s/guitar.mp3"
 	@test -f "$(ROOT)/build/verify_out/short_20s/vocals.mp3"
@@ -46,8 +46,7 @@ verify-mp3: build
 
 verify-psarc: build
 	@mkdir -p "$(ROOT)/build/verify_out"
-	DEMUCS_MLX_PYTHON="$(PYTHON)" DEMUCS_MLX_CACHE="$(ROOT)/models" \
-		"$(BIN)" "$(HOME)/Documents/psarc/CDLC/Parquet-Courts_Freebird-II_v1_p.psarc" \
+	$(RUN_ENV) "$(BIN)" "$(HOME)/Documents/psarc/CDLC/Parquet-Courts_Freebird-II_v1_p.psarc" \
 		--out "$(ROOT)/build/verify_out" --mp3
 	@ls -la "$(ROOT)/build/verify_out/Parquet-Courts_Freebird-II_v1_p/"
 	@test -f "$(ROOT)/build/verify_out/Parquet-Courts_Freebird-II_v1_p/guitar.mp3"
@@ -58,25 +57,24 @@ verify-psarc-mac: build
 	@test -f "$(PSARC_M)" || (echo "missing $(PSARC_M)"; exit 1)
 	@mkdir -p "$(ROOT)/build/verify_out"
 	@base=$$(basename "$(PSARC_M)" .psarc); \
-	DEMUCS_MLX_PYTHON="$(PYTHON)" DEMUCS_MLX_CACHE="$(ROOT)/models" \
-		"$(BIN)" "$(PSARC_M)" --out "$(ROOT)/build/verify_out" --mp3 && \
+	$(RUN_ENV) "$(BIN)" "$(PSARC_M)" --out "$(ROOT)/build/verify_out" --mp3 && \
 	test -f "$(ROOT)/build/verify_out/$$base/guitar.mp3" && \
 	echo "verify-psarc-mac OK ($$base)"
 
 models:
-	@test -d "$(MLX)/demucs_mlx" || (echo "ERROR: missing workers/mlx submodule (git submodule update --init --recursive)" >&2; exit 1)
+	@test -d "$(MLX)/demucs_mlx" || (echo "ERROR: missing workers/demucs-mac-silicon submodule (git submodule update --init --recursive)" >&2; exit 1)
 	@mkdir -p "$(ROOT)/models"
 	DEMUCS_MLX_CACHE="$(ROOT)/models" PYTHONPATH="$(MLX)" "$(PYTHON)" -c "from demucs_mlx.model_converter import get_mlx_model; get_mlx_model('htdemucs_6s'); print('ok')"
 
 worker:
-	@test -x "$(MLX)/scripts/freeze_worker.sh" || (echo "ERROR: missing workers/mlx submodule" >&2; exit 1)
+	@test -x "$(MLX)/scripts/freeze_worker.sh" || (echo "ERROR: missing workers/demucs-mac-silicon submodule" >&2; exit 1)
 	DEMUCS_MLX_PYTHON="$(PYTHON)" bash "$(MLX)/scripts/freeze_worker.sh"
 	mkdir -p "$(ROOT)/dist/worker"
 	rm -rf "$(ROOT)/dist/worker/demucs_mlx_worker"
 	cp -R "$(MLX)/dist/worker/demucs_mlx_worker" "$(ROOT)/dist/worker/"
 
 worker-torch:
-	@test -f "$(WINW)/scripts/freeze_worker_torch.ps1" || (echo "ERROR: missing workers/windows submodule" >&2; exit 1)
+	@test -f "$(WINW)/scripts/freeze_worker_torch.ps1" || (echo "ERROR: missing workers/demucs-windows submodule" >&2; exit 1)
 	pwsh -File "$(WINW)/scripts/freeze_worker_torch.ps1"
 	mkdir -p "$(ROOT)/dist/worker"
 	rm -rf "$(ROOT)/dist/worker/demucs_torch_worker"
