@@ -1,0 +1,6 @@
+[submodule "workers/mlx"]
+	path = workers/mlx
+	url = https://github.com/nicapotato/demucs-mac-silicon.git
+[submodule "workers/windows"]
+	path = workers/windows
+	url = https://github.com/nicapotato/demucs-windows.git
