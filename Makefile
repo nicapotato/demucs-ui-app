@@ -11,10 +11,10 @@ PUBLISH_ITCH ?= true
 PUBLISH_GH_RELEASE ?= true
 BUILD_PLATFORM ?= all
 
-.PHONY: run build bundle verify-mp3 verify-psarc models worker clean \
+.PHONY: run run-c process-c build bundle verify-mp3 verify-psarc models worker worker-c clean \
 	ci ci-watch release release-watch
 
-run build bundle verify-mp3 verify-psarc models worker clean:
+run run-c process-c build bundle verify-mp3 verify-psarc models worker worker-c clean:
 	$(MAKE) -C app $@
 
 ci:

@@ -2,13 +2,17 @@
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 REPO := $(abspath $(ROOT)/..)
 MLX := $(REPO)/workers/demucs-mac-silicon
+C_MLX ?= $(abspath $(REPO)/../demucs-mac-silicon)
+C_WORKER ?= $(C_MLX)/dist/worker/demucs_mlx_worker
+C_CACHE ?= $(C_MLX)/models
 WINW := $(REPO)/workers/demucs-windows
 BUILD := $(ROOT)/build
 BIN := $(BUILD)/demucs_mlx_app
 PYTHON := $(MLX)/.venv/bin/python
 RUN_ENV := DEMUCS_MLX_PYTHON="$(PYTHON)" DEMUCS_MLX_CACHE="$(ROOT)/models" PYTHONPATH="$(MLX)"
+RUN_C_ENV := DEMUCS_MLX_WORKER="$(C_WORKER)" DEMUCS_MLX_CACHE="$(C_CACHE)"
 
-.PHONY: all configure build run clean bundle worker worker-torch models verify-mp3 verify-psarc verify-psarc-mac externals version
+.PHONY: all configure build run run-c process-c clean bundle worker worker-c worker-torch models verify-mp3 verify-psarc verify-psarc-mac externals version
 
 all: build
 
@@ -30,6 +34,26 @@ version: build
 run: build
 	@test -d "$(MLX)/demucs_mlx" || (echo "ERROR: missing workers/demucs-mac-silicon submodule" >&2; exit 1)
 	$(RUN_ENV) "$(BIN)"
+
+run-c: build
+	@test -x "$(C_WORKER)" || (echo "ERROR: missing C worker at $(C_WORKER). From demucs-mac-silicon: make worker" >&2; exit 1)
+	@test -f "$(C_CACHE)/htdemucs_6s.safetensors" || (echo "ERROR: missing $(C_CACHE)/htdemucs_6s.safetensors. From demucs-mac-silicon: make models-export" >&2; exit 1)
+	@test -f "$(C_CACHE)/htdemucs_6s.json" || (echo "ERROR: missing $(C_CACHE)/htdemucs_6s.json" >&2; exit 1)
+	@test -f "$(dir $(C_WORKER))mlx.metallib" || (echo "ERROR: missing mlx.metallib beside $(C_WORKER)" >&2; exit 1)
+	$(RUN_C_ENV) "$(BIN)" --mp3
+
+# Usage: make process-c FILES="a.wav b.psarc" OUT=~/Documents/psarc/stems
+process-c: build
+	@test -n "$(FILES)" || (echo "Usage: make process-c FILES='song.wav' OUT=~/Documents/psarc/stems"; exit 1)
+	@test -x "$(C_WORKER)" || (echo "ERROR: missing C worker at $(C_WORKER)" >&2; exit 1)
+	@test -f "$(C_CACHE)/htdemucs_6s.safetensors" || (echo "ERROR: missing $(C_CACHE)/htdemucs_6s.safetensors" >&2; exit 1)
+	$(RUN_C_ENV) "$(BIN)" $(FILES) --out "$(or $(OUT),$(HOME)/Documents/psarc/stems)" --mp3 --headless
+
+worker-c:
+	$(MAKE) -C "$(C_MLX)" worker
+	mkdir -p "$(ROOT)/dist/worker"
+	cp "$(C_MLX)/dist/worker/demucs_mlx_worker" "$(ROOT)/dist/worker/demucs_mlx_worker"
+	cp "$(C_MLX)/dist/worker/mlx.metallib" "$(ROOT)/dist/worker/mlx.metallib"
 
 # Usage: make process FILES="a.mp3 b.psarc" OUT=~/Documents/psarc/stems
 process: build

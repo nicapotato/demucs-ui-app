@@ -51,6 +51,7 @@ int dmx_worker_run_job(const DmxWorkerConfig *cfg, DmxJob *job, DmxWorkerLive *l
   if (pid == 0) {
     close(pipefd[0]);
     dup2(pipefd[1], STDOUT_FILENO);
+    dup2(pipefd[1], STDERR_FILENO);
     close(pipefd[1]);
 
     if (cfg->model_cache_dir[0]) {
@@ -96,9 +97,21 @@ int dmx_worker_run_job(const DmxWorkerConfig *cfg, DmxJob *job, DmxWorkerLive *l
 
   FILE *fp = fdopen(pipefd[0], "r");
   char line[2048];
+  char last_plain[DMX_MSG_MAX];
+  last_plain[0] = '\0';
   if (fp) {
     while (fgets(line, sizeof line, fp)) {
-      dmx_worker_handle_json_line(live, line);
+      if (strstr(line, "\"event\"")) {
+        dmx_worker_handle_json_line(live, line);
+      } else {
+        size_t n = strlen(line);
+        while (n > 0 && (line[n - 1] == '\n' || line[n - 1] == '\r')) {
+          line[--n] = '\0';
+        }
+        if (line[0]) {
+          snprintf(last_plain, sizeof last_plain, "%s", line);
+        }
+      }
       if (live->cancel_requested) {
         break;
       }
@@ -124,7 +137,11 @@ int dmx_worker_run_job(const DmxWorkerConfig *cfg, DmxJob *job, DmxWorkerLive *l
   if (live->cancel_requested && live->exit_code != 0) {
     dmx_worker_set_msg(live->status_msg, sizeof live->status_msg, "Cancelled");
   } else if (live->exit_code != 0 && live->error_msg[0] == '\0') {
-    snprintf(live->error_msg, sizeof live->error_msg, "Worker exited with code %d", live->exit_code);
+    if (last_plain[0]) {
+      snprintf(live->error_msg, sizeof live->error_msg, "%s", last_plain);
+    } else {
+      snprintf(live->error_msg, sizeof live->error_msg, "Worker exited with code %d", live->exit_code);
+    }
   }
 
   live->pid = 0;

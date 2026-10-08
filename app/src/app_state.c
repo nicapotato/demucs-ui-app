@@ -3,9 +3,16 @@
 #include "prefs.h"
 #include "psarc_input.h"
 
+#include "rocksmith_psarc.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifndef _WIN32
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 
 typedef struct {
   DmxApp *app;
@@ -42,6 +49,43 @@ static int is_supported_path(const char *path) {
   return 0;
 }
 
+#ifdef __APPLE__
+static int path_is_wav(const char *path) {
+  const char *dot = strrchr(path, '.');
+  if (!dot) {
+    return 0;
+  }
+  return strcmp(dot, ".wav") == 0 || strcmp(dot, ".WAV") == 0;
+}
+
+static int afconvert_to_44100_wav(const char *src, char *out, size_t out_sz, char *err, size_t err_sz) {
+  char *tmp_err = NULL;
+  if (rs_temp_make_empty_with_suffix(".wav", out, out_sz, &tmp_err) != 0) {
+    snprintf(err, err_sz, "%s", tmp_err ? tmp_err : "temp wav failed");
+    free(tmp_err);
+    return -1;
+  }
+  pid_t pid = fork();
+  if (pid < 0) {
+    remove(out);
+    snprintf(err, err_sz, "fork afconvert failed");
+    return -1;
+  }
+  if (pid == 0) {
+    execl("/usr/bin/afconvert", "afconvert", "-f", "WAVE", "-d", "LEI16@44100", "-c", "2", src, out,
+          (char *)NULL);
+    _exit(127);
+  }
+  int status = 0;
+  if (waitpid(pid, &status, 0) < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+    remove(out);
+    snprintf(err, err_sz, "afconvert failed for %s (C worker needs WAV/MP3/M4A/AIFF)", src);
+    return -1;
+  }
+  return 0;
+}
+#endif
+
 int dmx_app_queued_count(const DmxApp *app) {
   if (!app) {
     return 0;
@@ -69,6 +113,10 @@ void dmx_app_init(DmxApp *app) {
   char err[512];
   if (dmx_worker_resolve(&app->worker_cfg, err, sizeof err) != 0) {
     snprintf(app->status_line, sizeof app->status_line, "%s", err);
+  } else if (dmx_worker_is_mlx_c(&app->worker_cfg)) {
+    app->model_index = 0;
+    snprintf(app->status_line, sizeof app->status_line,
+             "C MLX worker (htdemucs_6s). Add files, pick output, Start");
   } else {
     snprintf(app->status_line, sizeof app->status_line,
              "Add files, pick an output folder, then press Start");
@@ -134,6 +182,9 @@ void dmx_app_shutdown(DmxApp *app) {
 }
 
 void dmx_app_apply_settings(DmxApp *app) {
+  if (dmx_worker_is_mlx_c(&app->worker_cfg)) {
+    app->model_index = 0;
+  }
   if (app->model_index == 0) {
     snprintf(app->worker_cfg.model_name, sizeof app->worker_cfg.model_name, "htdemucs_6s");
   } else {
@@ -252,6 +303,29 @@ static void *worker_thread_main(void *arg) {
     snprintf(job->prepared_audio, sizeof job->prepared_audio, "%s", job->input_path);
     job->owns_temp_audio = 0;
   }
+
+#ifdef __APPLE__
+  if (dmx_worker_is_mlx_c(&app->worker_cfg) && !path_is_wav(job->prepared_audio)) {
+    char converted[DMX_PATH_MAX];
+    char conv_err[512];
+    if (afconvert_to_44100_wav(job->prepared_audio, converted, sizeof converted, conv_err,
+                               sizeof conv_err) != 0) {
+      job->status = DMX_JOB_ERROR;
+      snprintf(job->message, sizeof job->message, "%s", conv_err);
+      snprintf(app->live.error_msg, sizeof app->live.error_msg, "%s", conv_err);
+      cleanup_temp(job);
+      app->live.done = 1;
+      app->live.running = 0;
+      free(wa);
+      return NULL;
+    }
+    if (job->owns_temp_audio) {
+      remove(job->prepared_audio);
+    }
+    snprintf(job->prepared_audio, sizeof job->prepared_audio, "%s", converted);
+    job->owns_temp_audio = 1;
+  }
+#endif
 
   if (app->live.cancel_requested) {
     job->status = DMX_JOB_CANCELLED;

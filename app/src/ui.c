@@ -304,8 +304,9 @@ void dmx_ui_draw(DmxApp *app, int screen_w, int screen_h) {
   DrawRectangleLinesEx(
       (Rectangle){L.out_btn.x - 2, L.out_btn.y - 2, L.out_btn.width + 4, L.out_btn.height + 4}, 2.0f,
       out_border);
+  const int c_worker = dmx_worker_is_mlx_c(&app->worker_cfg);
   any_hover |= draw_button(L.model_btn, app->model_index == 0 ? "Model: htdemucs_6s" : "Model: htdemucs",
-                           (Color){70, 70, 80, 255}, 1);
+                           (Color){70, 70, 80, 255}, !c_worker);
   any_hover |= draw_button(L.fmt_btn, app->write_mp3 ? "Out: MP3" : "Out: WAV", (Color){70, 70, 80, 255}, 1);
 
   if (app->processing_enabled) {
@@ -414,6 +415,9 @@ int dmx_ui_handle_click(DmxApp *app, int x, int y, int screen_w, int screen_h) {
     return 1;
   }
   if (point_in(x, y, L.model_btn)) {
+    if (dmx_worker_is_mlx_c(&app->worker_cfg)) {
+      return 1;
+    }
     app->model_index = 1 - app->model_index;
     dmx_app_apply_settings(app);
     return 1;

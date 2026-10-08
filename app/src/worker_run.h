@@ -33,6 +33,9 @@ void dmx_worker_live_reset(DmxWorkerLive *live);
 /* Resolve worker binary / python. Returns 0 on success. */
 int dmx_worker_resolve(DmxWorkerConfig *cfg, char *err, size_t err_sz);
 
+/* Native mlx-c worker: sibling mlx.metallib, no python -m. */
+int dmx_worker_is_mlx_c(const DmxWorkerConfig *cfg);
+
 /* Spawn worker for one job. Updates live asynchronously via monitor thread.
  * Call from a background thread; blocks until process exits. */
 int dmx_worker_run_job(const DmxWorkerConfig *cfg, DmxJob *job, DmxWorkerLive *live);

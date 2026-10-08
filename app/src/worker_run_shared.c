@@ -179,6 +179,21 @@ static int try_path(DmxWorkerConfig *cfg, const char *path, const char *module) 
   return 1;
 }
 
+int dmx_worker_is_mlx_c(const DmxWorkerConfig *cfg) {
+  if (!cfg || cfg->module_or_empty[0] || !cfg->python_or_worker[0]) {
+    return 0;
+  }
+  char dir[DMX_PATH_MAX];
+  dmx_worker_dirname_copy(cfg->python_or_worker, dir, sizeof dir);
+  char metal[DMX_PATH_MAX];
+#ifdef _WIN32
+  snprintf(metal, sizeof metal, "%s\\mlx.metallib", dir);
+#else
+  snprintf(metal, sizeof metal, "%s/mlx.metallib", dir);
+#endif
+  return dmx_worker_file_exists(metal);
+}
+
 int dmx_worker_resolve(DmxWorkerConfig *cfg, char *err, size_t err_sz) {
   if (!cfg) {
     return -1;
