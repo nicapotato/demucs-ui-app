@@ -2,11 +2,33 @@
 # Assemble DemucsMlxArmMacSilicon.app for local / itch distribution.
 set -euo pipefail
 
+# DMX_WORKER_KIND=c (default): native mlx-c worker + safetensors weights.
+# DMX_WORKER_KIND=py: PyInstaller onedir worker + MLX pickle weights.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REPO="$(cd "$ROOT/.." && pwd)"
 BIN="$ROOT/build/demucs_mlx_app"
-WORKER_DIR="$ROOT/dist/worker/demucs_mlx_worker"
+WORKER_KIND="${DMX_WORKER_KIND:-c}"
 MODELS="$ROOT/models"
+case "$WORKER_KIND" in
+  c)
+    WORKER_DIR="$ROOT/dist/worker"
+    WORKER_FILES=(demucs_mlx_worker mlx.metallib)
+    MODEL_FILES=(htdemucs_6s.safetensors htdemucs_6s.json)
+    WORKER_HINT="make -C app worker"
+    MODELS_HINT="make -C app models"
+    ;;
+  py)
+    WORKER_DIR="$ROOT/dist/worker/demucs_mlx_worker"
+    WORKER_FILES=()
+    MODEL_FILES=(htdemucs_6s_mlx.pkl)
+    WORKER_HINT="make -C app worker-py"
+    MODELS_HINT="make -C app models-py"
+    ;;
+  *)
+    echo "DMX_WORKER_KIND must be 'c' or 'py' (got '$WORKER_KIND')" >&2
+    exit 1
+    ;;
+esac
 BRANDING="$REPO/resources"
 APP_NAME="DemucsMlxArmMacSilicon"
 APP_EXEC="DemucsMlxArmMacSilicon"
@@ -24,20 +46,28 @@ if [[ -f "$REPO/project.conf" ]]; then
     VERSION="0.0.0"
   fi
 fi
-echo "Packaging ${APP_NAME} v${VERSION}"
+echo "Packaging ${APP_NAME} v${VERSION} (worker: ${WORKER_KIND})"
 
 if [[ ! -x "$BIN" ]]; then
   echo "Build the GUI first: make -C app build" >&2
   exit 1
 fi
-if [[ ! -x "$WORKER_DIR/demucs_mlx_worker" ]]; then
-  echo "Freeze the worker first: make -C app worker" >&2
+if [[ ! -f "$WORKER_DIR/demucs_mlx_worker" || ! -x "$WORKER_DIR/demucs_mlx_worker" ]]; then
+  echo "Build the worker first: $WORKER_HINT" >&2
   exit 1
 fi
-if [[ ! -f "$MODELS/htdemucs_6s_mlx.pkl" ]]; then
-  echo "Missing bundled model $MODELS/htdemucs_6s_mlx.pkl - run: make -C app models" >&2
-  exit 1
-fi
+for f in "${WORKER_FILES[@]+"${WORKER_FILES[@]}"}"; do
+  if [[ ! -f "$WORKER_DIR/$f" ]]; then
+    echo "Missing $WORKER_DIR/$f - run: $WORKER_HINT" >&2
+    exit 1
+  fi
+done
+for f in "${MODEL_FILES[@]}"; do
+  if [[ ! -f "$MODELS/$f" ]]; then
+    echo "Missing bundled model $MODELS/$f - run: $MODELS_HINT" >&2
+    exit 1
+  fi
+done
 if [[ ! -f "$ICON_SRC" ]]; then
   echo "Missing icon source $ICON_SRC" >&2
   exit 1
@@ -47,8 +77,16 @@ rm -rf "$APP"
 mkdir -p "$MACOS/resources" "$RES/worker" "$RES/models" "$RES/resources"
 
 cp "$BIN" "$MACOS/${APP_EXEC}"
-cp -R "$WORKER_DIR/." "$RES/worker/"
-cp -R "$MODELS/." "$RES/models/"
+if [[ "$WORKER_KIND" == "c" ]]; then
+  for f in "${WORKER_FILES[@]}"; do
+    cp "$WORKER_DIR/$f" "$RES/worker/$f"
+  done
+else
+  cp -R "$WORKER_DIR/." "$RES/worker/"
+fi
+for f in "${MODEL_FILES[@]}"; do
+  cp "$MODELS/$f" "$RES/models/$f"
+done
 # Branding for SearchAndSetResourceDir / GetApplicationDirectory fallbacks
 cp -R "$BRANDING/." "$MACOS/resources/"
 cp -R "$BRANDING/." "$RES/resources/"

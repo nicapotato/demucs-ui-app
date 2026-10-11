@@ -28,15 +28,22 @@ git submodule update --init --recursive
 
 ```bash
 git submodule update --init --recursive
-# MLX worker venv
-(cd workers/demucs-mac-silicon && uv venv .venv --python 3.12 && source .venv/bin/activate && uv pip install -e '.[convert]' lameenc pyinstaller)
+brew install cmake lame
+# Python venv, only used to convert + export weights for the C worker
+(cd workers/demucs-mac-silicon && uv venv .venv --python 3.12 && source .venv/bin/activate && uv pip install -e '.[convert]')
 
 make -C app externals
-make -C app models
+make -C app worker    # native mlx-c worker + mlx.metallib -> app/dist/worker/
+make -C app models    # htdemucs_6s.safetensors + .json -> app/models/
 make -C app run
 make -C app version   # prints Demucs MLX ARM Mac Silicon x.y.z
 make bundle           # .app + zip
 ```
+
+The Mac build defaults to the native mlx-c worker (`worker-c/` in `demucs-mac-silicon`). If a sibling
+`../demucs-mac-silicon` checkout exists it is used instead of the submodule; override with `C_MLX=...`.
+The PyInstaller Python worker is still available via `make -C app worker-py models-py run-py` and
+`make -C app bundle-py`.
 
 ## Windows zip (local, on a Windows box)
 

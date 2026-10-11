@@ -85,7 +85,13 @@ jobs:
       - name: Install Homebrew deps
         run: |
           set -euo pipefail
-          brew install libvorbis libogg ffmpeg
+          brew install libvorbis libogg ffmpeg lame
+
+      - name: Ensure Metal toolchain (mlx.metallib)
+        run: |
+          set -euo pipefail
+          xcrun -sdk macosx -f metal >/dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
+          xcrun -sdk macosx -f metal
 
       - uses: actions/setup-python@v5
         with:
@@ -109,33 +115,46 @@ jobs:
           ./app/build/demucs_mlx_app --version
           ./app/build/demucs_mlx_app --version | grep -F "${VERSION}"
 
-      - name: Install Python package (convert + freeze deps)
+      - name: Install Python package (weight convert + safetensors export)
         run: |
           set -euo pipefail
           uv venv workers/demucs-mac-silicon/.venv --python "${{ env.PYTHON_VERSION }}"
           source workers/demucs-mac-silicon/.venv/bin/activate
-          (cd workers/demucs-mac-silicon && uv pip install -e '.[convert]' lameenc pyinstaller)
+          (cd workers/demucs-mac-silicon && uv pip install -e '.[convert]')
 
       - name: Restore MLX model cache
         uses: actions/cache@v4
         id: model-cache
         with:
-          path: app/models/htdemucs_6s_mlx.pkl
-          key: htdemucs-6s-mlx-${{ hashFiles('workers/demucs-mac-silicon/demucs_mlx/__init__.py', 'workers/demucs-mac-silicon/demucs_mlx/remote/htdemucs_6s.yaml') }}
+          path: |
+            app/models/htdemucs_6s_mlx.pkl
+            app/models/htdemucs_6s.safetensors
+            app/models/htdemucs_6s.json
+          key: htdemucs-6s-mlx-c-${{ hashFiles('workers/demucs-mac-silicon/demucs_mlx/__init__.py', 'workers/demucs-mac-silicon/demucs_mlx/remote/htdemucs_6s.yaml', 'workers/demucs-mac-silicon/demucs_mlx/c_export.py', 'workers/demucs-mac-silicon/scripts/export_safetensors.py') }}
 
-      - name: Convert / ensure MLX weights
+      - name: Convert + export safetensors weights for C worker
         if: steps.model-cache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
-          source workers/demucs-mac-silicon/.venv/bin/activate
           make -C app models
-          test -f app/models/htdemucs_6s_mlx.pkl
+          test -f app/models/htdemucs_6s.safetensors
+          test -f app/models/htdemucs_6s.json
 
-      - name: Freeze worker (PyInstaller)
+      - name: Restore mlx-c worker build cache
+        uses: actions/cache@v4
+        with:
+          path: workers/demucs-mac-silicon/worker-c/build
+          key: mlx-c-worker-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('workers/demucs-mac-silicon/worker-c/**/*.c', 'workers/demucs-mac-silicon/worker-c/**/*.h', 'workers/demucs-mac-silicon/worker-c/CMakeLists.txt') }}
+          restore-keys: |
+            mlx-c-worker-build-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Build mlx-c worker
         run: |
           set -euo pipefail
-          source workers/demucs-mac-silicon/.venv/bin/activate
           make -C app worker
+          test -x app/dist/worker/demucs_mlx_worker
+          test -f app/dist/worker/mlx.metallib
+          otool -L app/dist/worker/demucs_mlx_worker
 
       - name: Bundle .app + zip
         run: |
