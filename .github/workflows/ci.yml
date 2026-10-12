@@ -66,7 +66,7 @@ jobs:
 
   build-and-publish:
     runs-on: macos-latest
-    timeout-minutes: 40
+    timeout-minutes: 80
     needs: read-version
     if: contains(fromJSON('["macos","all"]'), github.event.inputs.build_platform)
     env:
