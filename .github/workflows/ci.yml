@@ -43,6 +43,7 @@ jobs:
     timeout-minutes: 40
     outputs:
       version: ${{ steps.v.outputs.version }}
+      mac_flavors: ${{ steps.v.outputs.mac_flavors }}
     steps:
       - name: Block re-runs
         if: github.run_attempt != 1
@@ -55,6 +56,7 @@ jobs:
       - id: v
         env:
           INPUT_VERSION: ${{ github.event.inputs.version }}
+          INPUT_PLATFORM: ${{ github.event.inputs.build_platform }}
         run: |
           set -euo pipefail
           if [ -n "${INPUT_VERSION}" ]; then
@@ -68,26 +70,26 @@ jobs:
           fi
           echo "version=${V}" >> "$GITHUB_OUTPUT"
           echo "Version: ${V}"
+          MLX_C='{"flavor":"mlx-c","app":"DemucsMlxCArmMacSilicon","zip":"demucs-mlx-c-arm-mac-silicon.zip","channel":"mlx-c-arm-mac-silicon"}'
+          MLX_PY='{"flavor":"mlx-py","app":"DemucsMlxPyArmMacSilicon","zip":"demucs-mlx-py-arm-mac-silicon.zip","channel":"mlx-py-arm-mac-silicon"}'
+          case "${INPUT_PLATFORM}" in
+            all|macos) FLAVORS="[${MLX_C},${MLX_PY}]" ;;
+            macos-c)   FLAVORS="[${MLX_C}]" ;;
+            macos-py)  FLAVORS="[${MLX_PY}]" ;;
+            *)         FLAVORS='[]' ;;
+          esac
+          echo "mac_flavors=${FLAVORS}" >> "$GITHUB_OUTPUT"
+          echo "mac flavors: ${FLAVORS}"
 
   build-macos:
     runs-on: macos-latest
     timeout-minutes: 30
     needs: read-version
+    if: needs.read-version.outputs.mac_flavors != '[]'
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - flavor: mlx-c
-            platforms: '["macos","macos-c","all"]'
-            app: DemucsMlxCArmMacSilicon
-            zip: demucs-mlx-c-arm-mac-silicon.zip
-            channel: mlx-c-arm-mac-silicon
-          - flavor: mlx-py
-            platforms: '["macos","macos-py","all"]'
-            app: DemucsMlxPyArmMacSilicon
-            zip: demucs-mlx-py-arm-mac-silicon.zip
-            channel: mlx-py-arm-mac-silicon
-    if: contains(fromJSON(matrix.platforms), github.event.inputs.build_platform)
+        include: ${{ fromJSON(needs.read-version.outputs.mac_flavors) }}
     env:
       BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
       VERSION: ${{ needs.read-version.outputs.version }}
