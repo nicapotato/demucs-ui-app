@@ -36,6 +36,13 @@ int dmx_worker_resolve(DmxWorkerConfig *cfg, char *err, size_t err_sz);
 /* Native mlx-c worker: sibling mlx.metallib, no python -m. */
 int dmx_worker_is_mlx_c(const DmxWorkerConfig *cfg);
 
+/* Native C/CUDA worker (demucs_cuda_worker.exe). */
+int dmx_worker_is_cuda_c(const DmxWorkerConfig *cfg);
+
+/* Either native worker: htdemucs_6s only, no python -m. */
+int dmx_worker_is_native(const DmxWorkerConfig *cfg);
+const char *dmx_worker_native_label(const DmxWorkerConfig *cfg);
+
 /* Spawn worker for one job. Updates live asynchronously via monitor thread.
  * Call from a background thread; blocks until process exits. */
 int dmx_worker_run_job(const DmxWorkerConfig *cfg, DmxJob *job, DmxWorkerLive *live);

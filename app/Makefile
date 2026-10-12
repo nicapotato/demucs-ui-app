@@ -6,6 +6,7 @@ MLX := $(REPO)/workers/demucs-mac-silicon
 SIBLING_MLX := $(abspath $(REPO)/../demucs-mac-silicon)
 C_MLX ?= $(if $(wildcard $(SIBLING_MLX)/worker-c/CMakeLists.txt),$(SIBLING_MLX),$(MLX))
 WINW := $(REPO)/workers/demucs-windows
+CUDA_C ?= $(abspath $(REPO)/../demucs-cuda)
 BUILD := $(ROOT)/build
 BIN := $(BUILD)/demucs_mlx_app
 PYTHON := $(MLX)/.venv/bin/python
@@ -17,7 +18,7 @@ RUN_ENV := DEMUCS_MLX_WORKER="$(C_WORKER)" DEMUCS_MLX_CACHE="$(C_CACHE)"
 RUN_PY_ENV := DEMUCS_MLX_PYTHON="$(PYTHON)" DEMUCS_MLX_CACHE="$(ROOT)/models" PYTHONPATH="$(MLX)"
 
 .PHONY: all configure build run run-py run-c process process-py process-c clean bundle bundle-py worker worker-py \
-	worker-c worker-torch models models-py check-c verify-mp3 verify-psarc verify-psarc-mac externals version
+	worker-c worker-torch worker-cuda models models-py check-c verify-mp3 verify-psarc verify-psarc-mac externals version
 
 all: build
 
@@ -117,6 +118,13 @@ worker-torch:
 	mkdir -p "$(ROOT)/dist/worker"
 	rm -rf "$(ROOT)/dist/worker/demucs_torch_worker"
 	cp -R "$(WINW)/dist/worker/demucs_torch_worker" "$(ROOT)/dist/worker/"
+
+# Native C/CUDA worker from a demucs-cuda checkout (Windows: build it there first, see its README).
+worker-cuda:
+	@test -f "$(CUDA_C)/worker-cuda/build/demucs_cuda_worker.exe" || (echo "ERROR: build $(CUDA_C)/worker-cuda/build/demucs_cuda_worker.exe first" >&2; exit 1)
+	mkdir -p "$(DIST_WORKER)" "$(ROOT)/models"
+	cp "$(CUDA_C)/worker-cuda/build/demucs_cuda_worker.exe" "$(DIST_WORKER)/demucs_cuda_worker.exe"
+	cp "$(CUDA_C)/models/htdemucs_6s.fp16.safetensors" "$(CUDA_C)/models/htdemucs_6s.json" "$(ROOT)/models/"
 
 bundle: build worker models
 	DMX_WORKER_KIND=c bash "$(ROOT)/scripts/build_app.sh"

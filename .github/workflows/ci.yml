@@ -35,9 +35,17 @@ env:
 jobs:
   read-version:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     outputs:
       version: ${{ steps.v.outputs.version }}
     steps:
+      - name: Block re-runs
+        if: github.run_attempt != 1
+        shell: bash
+        run: |
+          echo "::error::Re-runs are disabled (attempt ${{ github.run_attempt }}). Dispatch a new run instead." >&2
+          exit 1
+
       - uses: actions/checkout@v4
       - id: v
         env:
@@ -58,13 +66,20 @@ jobs:
 
   build-and-publish:
     runs-on: macos-latest
+    timeout-minutes: 40
     needs: read-version
-    timeout-minutes: 120
     if: contains(fromJSON('["macos","all"]'), github.event.inputs.build_platform)
     env:
       BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
       VERSION: ${{ needs.read-version.outputs.version }}
     steps:
+      - name: Block re-runs
+        if: github.run_attempt != 1
+        shell: bash
+        run: |
+          echo "::error::Re-runs are disabled (attempt ${{ github.run_attempt }}). Dispatch a new run instead." >&2
+          exit 1
+
       - name: Checkout demucs-ui-app
         uses: actions/checkout@v4
         with:
@@ -206,14 +221,21 @@ jobs:
 
   build-and-publish-windows:
     runs-on: windows-latest
+    timeout-minutes: 40
     needs: read-version
-    timeout-minutes: 180
     if: contains(fromJSON('["windows","all"]'), github.event.inputs.build_platform)
     env:
       BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
       VERSION: ${{ needs.read-version.outputs.version }}
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
     steps:
+      - name: Block re-runs
+        if: github.run_attempt != 1
+        shell: bash
+        run: |
+          echo "::error::Re-runs are disabled (attempt ${{ github.run_attempt }}). Dispatch a new run instead." >&2
+          exit 1
+
       - name: Checkout demucs-ui-app
         uses: actions/checkout@v4
         with:

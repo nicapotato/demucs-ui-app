@@ -188,13 +188,14 @@ int main(int argc, char **argv) {
   }
 
   dmx_app_load_branding(&app);
-  if (dmx_worker_is_mlx_c(&app.worker_cfg)) {
+  if (dmx_worker_is_native(&app.worker_cfg)) {
+    const char *label = dmx_worker_native_label(&app.worker_cfg);
     if (app.output_dir_accepted) {
       snprintf(app.status_line, sizeof app.status_line,
-               "C MLX worker ready - add files and press Start (v%s)", DMX_APP_VERSION);
+               "%s ready - add files and press Start (v%s)", label, DMX_APP_VERSION);
     } else {
       snprintf(app.status_line, sizeof app.status_line,
-               "C MLX worker: add files, pick output, press Start (v%s)", DMX_APP_VERSION);
+               "%s: add files, pick output, press Start (v%s)", label, DMX_APP_VERSION);
     }
   } else if (app.output_dir_accepted) {
     snprintf(app.status_line, sizeof app.status_line,

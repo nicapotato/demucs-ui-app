@@ -10,6 +10,8 @@ $ExeCandidates = @(
 )
 $Exe = $ExeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
 $WorkerDir = Join-Path $Root "dist\worker\demucs_torch_worker"
+# Native C/CUDA worker (single exe, fp16 weights) wins over the PyInstaller torch worker.
+$CudaWorker = Join-Path $Root "dist\worker\demucs_cuda_worker.exe"
 $Models = Join-Path $Root "models"
 $Branding = Join-Path $Repo "resources"
 $Release = Join-Path $Root "dist\DemucsCudaWindows"
@@ -30,8 +32,9 @@ Write-Host "Packaging Demucs CUDA Windows v$Version"
 if (-not $Exe) {
     Write-Error "Build the GUI first (CMake Release). Missing DemucsCudaWindows.exe"
 }
-if (-not (Test-Path (Join-Path $WorkerDir "demucs_torch_worker.exe"))) {
-    Write-Error "Freeze the worker first: make -C app worker-torch"
+$UseCuda = Test-Path $CudaWorker
+if (-not $UseCuda -and -not (Test-Path (Join-Path $WorkerDir "demucs_torch_worker.exe"))) {
+    Write-Error "Build a worker first: make -C app worker-cuda (or worker-torch)"
 }
 if (-not (Test-Path $Branding)) {
     Write-Error "Missing branding resources at $Branding"
@@ -40,7 +43,14 @@ if (-not (Test-Path $Branding)) {
 if (Test-Path $Release) { Remove-Item -Recurse -Force $Release }
 New-Item -ItemType Directory -Force -Path $Release | Out-Null
 Copy-Item -Force $Exe (Join-Path $Release "DemucsCudaWindows.exe")
-Copy-Item -Recurse -Force $WorkerDir (Join-Path $Release "worker")
+if ($UseCuda) {
+    Write-Host "Worker: native CUDA ($CudaWorker)"
+    New-Item -ItemType Directory -Force -Path (Join-Path $Release "worker") | Out-Null
+    Copy-Item -Force $CudaWorker (Join-Path $Release "worker\demucs_cuda_worker.exe")
+} else {
+    Write-Host "Worker: PyInstaller torch ($WorkerDir)"
+    Copy-Item -Recurse -Force $WorkerDir (Join-Path $Release "worker")
+}
 New-Item -ItemType Directory -Force -Path (Join-Path $Release "models") | Out-Null
 if (Test-Path $Models) {
     Copy-Item -Recurse -Force "$Models\*" (Join-Path $Release "models")

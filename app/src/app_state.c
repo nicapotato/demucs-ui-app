@@ -113,10 +113,11 @@ void dmx_app_init(DmxApp *app) {
   char err[512];
   if (dmx_worker_resolve(&app->worker_cfg, err, sizeof err) != 0) {
     snprintf(app->status_line, sizeof app->status_line, "%s", err);
-  } else if (dmx_worker_is_mlx_c(&app->worker_cfg)) {
+  } else if (dmx_worker_is_native(&app->worker_cfg)) {
     app->model_index = 0;
     snprintf(app->status_line, sizeof app->status_line,
-             "C MLX worker (htdemucs_6s). Add files, pick output, Start");
+             "%s (htdemucs_6s). Add files, pick output, Start",
+             dmx_worker_native_label(&app->worker_cfg));
   } else {
     snprintf(app->status_line, sizeof app->status_line,
              "Add files, pick an output folder, then press Start");
@@ -182,7 +183,7 @@ void dmx_app_shutdown(DmxApp *app) {
 }
 
 void dmx_app_apply_settings(DmxApp *app) {
-  if (dmx_worker_is_mlx_c(&app->worker_cfg)) {
+  if (dmx_worker_is_native(&app->worker_cfg)) {
     app->model_index = 0;
   }
   if (app->model_index == 0) {

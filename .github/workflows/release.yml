@@ -43,10 +43,18 @@ env:
 jobs:
   read-version:
     runs-on: ubuntu-latest
+    timeout-minutes: 80
     outputs:
       version: ${{ steps.v.outputs.version }}
       tag: ${{ steps.v.outputs.tag }}
     steps:
+      - name: Block re-runs
+        if: github.run_attempt != 1
+        shell: bash
+        run: |
+          echo "::error::Re-runs are disabled (attempt ${{ github.run_attempt }}). Dispatch a new run instead." >&2
+          exit 1
+
       - uses: actions/checkout@v4
       - id: v
         env:
@@ -68,14 +76,21 @@ jobs:
 
   build-and-publish:
     runs-on: macos-latest
+    timeout-minutes: 40
     needs: read-version
-    timeout-minutes: 120
     if: contains(fromJSON('["macos","all"]'), github.event.inputs.build_platform)
     env:
       BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
       VERSION: ${{ needs.read-version.outputs.version }}
       TAG: ${{ needs.read-version.outputs.tag }}
     steps:
+      - name: Block re-runs
+        if: github.run_attempt != 1
+        shell: bash
+        run: |
+          echo "::error::Re-runs are disabled (attempt ${{ github.run_attempt }}). Dispatch a new run instead." >&2
+          exit 1
+
       - name: Checkout demucs-ui-app
         uses: actions/checkout@v4
         with:
@@ -85,7 +100,7 @@ jobs:
       - name: Install Homebrew deps
         run: |
           set -euo pipefail
-          brew install libvorbis libogg ffmpeg lame
+          brew install libvorbis libogg ffmpeg lame mpg123
 
       - name: Ensure Metal toolchain (mlx.metallib)
         run: |
@@ -141,7 +156,8 @@ jobs:
           test -f app/models/htdemucs_6s.json
 
       - name: Restore mlx-c worker build cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
+        id: worker-cache
         with:
           path: workers/demucs-mac-silicon/worker-c/build
           key: mlx-c-worker-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('workers/demucs-mac-silicon/worker-c/**/*.c', 'workers/demucs-mac-silicon/worker-c/**/*.h', 'workers/demucs-mac-silicon/worker-c/CMakeLists.txt') }}
@@ -149,12 +165,20 @@ jobs:
             mlx-c-worker-build-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Build mlx-c worker
+        id: build-worker
         run: |
           set -euo pipefail
           make -C app worker
           test -x app/dist/worker/demucs_mlx_worker
           test -f app/dist/worker/mlx.metallib
           otool -L app/dist/worker/demucs_mlx_worker
+
+      - name: Save mlx-c worker build cache
+        if: always() && steps.worker-cache.outputs.cache-hit != 'true' && steps.build-worker.outcome != 'skipped'
+        uses: actions/cache/save@v4
+        with:
+          path: workers/demucs-mac-silicon/worker-c/build
+          key: ${{ steps.worker-cache.outputs.cache-primary-key }}
 
       - name: Bundle .app + zip
         run: |
@@ -217,8 +241,8 @@ jobs:
 
   build-and-publish-windows:
     runs-on: windows-latest
+    timeout-minutes: 40
     needs: read-version
-    timeout-minutes: 180
     if: contains(fromJSON('["windows","all"]'), github.event.inputs.build_platform)
     env:
       BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
@@ -226,6 +250,13 @@ jobs:
       TAG: ${{ needs.read-version.outputs.tag }}
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
     steps:
+      - name: Block re-runs
+        if: github.run_attempt != 1
+        shell: bash
+        run: |
+          echo "::error::Re-runs are disabled (attempt ${{ github.run_attempt }}). Dispatch a new run instead." >&2
+          exit 1
+
       - name: Checkout demucs-ui-app
         uses: actions/checkout@v4
         with:
@@ -410,6 +441,7 @@ jobs:
 
   publish-gh-release:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     needs: [read-version, build-and-publish, build-and-publish-windows]
     if: >-
       github.event.inputs.publish_gh_release == 'true' &&
@@ -424,6 +456,13 @@ jobs:
       TAG: ${{ needs.read-version.outputs.tag }}
       VERSION: ${{ needs.read-version.outputs.version }}
     steps:
+      - name: Block re-runs
+        if: github.run_attempt != 1
+        shell: bash
+        run: |
+          echo "::error::Re-runs are disabled (attempt ${{ github.run_attempt }}). Dispatch a new run instead." >&2
+          exit 1
+
       - uses: actions/checkout@v4
 
       - name: Guard duplicate tag
