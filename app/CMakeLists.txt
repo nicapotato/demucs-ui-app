@@ -153,6 +153,7 @@ add_executable(demucs_mlx_app
   src/worker_run_shared.c
   src/psarc_input.c
   src/ui.c
+  src/ui_theme.c
   ${DMX_PLATFORM_SRC}
   "${TINYFD_DIR}/tinyfiledialogs.c"
 )

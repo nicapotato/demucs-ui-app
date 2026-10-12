@@ -107,8 +107,8 @@ static int run_headless(DmxApp *app) {
   /* Headless has no Start button - process the queue immediately. */
   app->processing_enabled = 1;
 
-  printf("headless: %d job(s) -> %s (worker %s)\n", app->queue.count, app->output_dir,
-         app->worker_cfg.python_or_worker);
+  printf("headless: %d job(s) -> %s (backend %s, worker %s)\n", app->queue.count, app->output_dir,
+         dmx_worker_backend_label(&app->worker_cfg), app->worker_cfg.python_or_worker);
   fflush(stdout);
 
   char last_status[DMX_MSG_MAX];
@@ -181,6 +181,7 @@ int main(int argc, char **argv) {
 
   SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_MSAA_4X_HINT);
   InitWindow(980, 720, DMX_APP_NAME);
+  SetWindowMinSize(640, 680);
   SetTargetFPS(60);
 
   if (!SearchAndSetResourceDir("resources")) {
@@ -189,13 +190,13 @@ int main(int argc, char **argv) {
 
   dmx_app_load_branding(&app);
   if (dmx_worker_is_native(&app.worker_cfg)) {
-    const char *label = dmx_worker_native_label(&app.worker_cfg);
+    const char *label = dmx_worker_backend_label(&app.worker_cfg);
     if (app.output_dir_accepted) {
       snprintf(app.status_line, sizeof app.status_line,
-               "%s ready - add files and press Start (v%s)", label, DMX_APP_VERSION);
+               "%s worker ready - add files and press Start (v%s)", label, DMX_APP_VERSION);
     } else {
       snprintf(app.status_line, sizeof app.status_line,
-               "%s: add files, pick output, press Start (v%s)", label, DMX_APP_VERSION);
+               "%s worker: add files, pick output, press Start (v%s)", label, DMX_APP_VERSION);
     }
   } else if (app.output_dir_accepted) {
     snprintf(app.status_line, sizeof app.status_line,

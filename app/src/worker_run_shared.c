@@ -21,7 +21,6 @@
 
 void dmx_worker_config_defaults(DmxWorkerConfig *cfg) {
   memset(cfg, 0, sizeof *cfg);
-  snprintf(cfg->model_name, sizeof cfg->model_name, "htdemucs_6s");
   cfg->write_mp3 = 1;
   cfg->batch_size = 8;
 }
@@ -211,8 +210,47 @@ int dmx_worker_is_native(const DmxWorkerConfig *cfg) {
   return dmx_worker_is_mlx_c(cfg) || dmx_worker_is_cuda_c(cfg);
 }
 
-const char *dmx_worker_native_label(const DmxWorkerConfig *cfg) {
-  return dmx_worker_is_cuda_c(cfg) ? "C CUDA worker" : "C MLX worker";
+static int worker_is_torch(const DmxWorkerConfig *cfg) {
+  if (strstr(cfg->module_or_empty, "torch")) {
+    return 1;
+  }
+  const char *base = cfg->python_or_worker;
+  for (const char *p = cfg->python_or_worker; *p; p++) {
+    if (*p == '/' || *p == '\\') {
+      base = p + 1;
+    }
+  }
+  return strncmp(base, "demucs_torch", 12) == 0;
+}
+
+const char *dmx_worker_backend_label(const DmxWorkerConfig *cfg) {
+  if (!cfg || !cfg->python_or_worker[0]) {
+    return "none";
+  }
+  if (dmx_worker_is_mlx_c(cfg)) {
+    return "mlx-c";
+  }
+  if (dmx_worker_is_cuda_c(cfg)) {
+    return "cuda-c";
+  }
+  return worker_is_torch(cfg) ? "torch-py" : "mlx-py";
+}
+
+const char *dmx_worker_backend_detail(const DmxWorkerConfig *cfg) {
+  if (!cfg || !cfg->python_or_worker[0]) {
+    return "no worker found";
+  }
+  if (dmx_worker_is_mlx_c(cfg)) {
+    return "native C + Metal";
+  }
+  if (dmx_worker_is_cuda_c(cfg)) {
+    return "native C + CUDA";
+  }
+  const int dev = cfg->module_or_empty[0] != '\0';
+  if (worker_is_torch(cfg)) {
+    return dev ? "PyTorch via python -m" : "frozen PyTorch worker";
+  }
+  return dev ? "MLX Python via python -m" : "frozen MLX Python worker";
 }
 
 int dmx_worker_resolve(DmxWorkerConfig *cfg, char *err, size_t err_sz) {

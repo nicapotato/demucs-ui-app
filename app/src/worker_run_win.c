@@ -133,7 +133,7 @@ int dmx_worker_run_job(const DmxWorkerConfig *cfg, DmxJob *job, DmxWorkerLive *l
   }
   append_quoted(cmd, sizeof cmd, job->prepared_audio);
   append_quoted(cmd, sizeof cmd, "-n");
-  append_quoted(cmd, sizeof cmd, cfg->model_name);
+  append_quoted(cmd, sizeof cmd, DMX_MODEL_NAME);
   append_quoted(cmd, sizeof cmd, "-o");
   append_quoted(cmd, sizeof cmd, job->out_dir);
   append_quoted(cmd, sizeof cmd, "--track-name");

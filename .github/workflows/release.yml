@@ -43,7 +43,7 @@ env:
 jobs:
   read-version:
     runs-on: ubuntu-latest
-    timeout-minutes: 80
+    timeout-minutes: 5
     outputs:
       version: ${{ steps.v.outputs.version }}
       tag: ${{ steps.v.outputs.tag }}
@@ -76,7 +76,7 @@ jobs:
 
   build-and-publish:
     runs-on: macos-latest
-    timeout-minutes: 40
+    timeout-minutes: 80
     needs: read-version
     if: contains(fromJSON('["macos","all"]'), github.event.inputs.build_platform)
     env:
@@ -241,7 +241,7 @@ jobs:
 
   build-and-publish-windows:
     runs-on: windows-latest
-    timeout-minutes: 40
+    timeout-minutes: 80
     needs: read-version
     if: contains(fromJSON('["windows","all"]'), github.event.inputs.build_platform)
     env:

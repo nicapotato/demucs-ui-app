@@ -5,11 +5,13 @@
 
 #include <stddef.h>
 
+/* The app ships and runs a single checkpoint on every backend. */
+#define DMX_MODEL_NAME "htdemucs_6s"
+
 typedef struct {
   char python_or_worker[DMX_PATH_MAX];
   char module_or_empty[64]; /* "demucs_mlx.separate" when using python -m */
   char model_cache_dir[DMX_PATH_MAX];
-  char model_name[64];
   int write_mp3;
   int batch_size;
 } DmxWorkerConfig;
@@ -39,9 +41,13 @@ int dmx_worker_is_mlx_c(const DmxWorkerConfig *cfg);
 /* Native C/CUDA worker (demucs_cuda_worker.exe). */
 int dmx_worker_is_cuda_c(const DmxWorkerConfig *cfg);
 
-/* Either native worker: htdemucs_6s only, no python -m. */
+/* Either native worker: no python -m. */
 int dmx_worker_is_native(const DmxWorkerConfig *cfg);
-const char *dmx_worker_native_label(const DmxWorkerConfig *cfg);
+
+/* Short backend id: "mlx-c", "mlx-py", "cuda-c" or "torch-py". */
+const char *dmx_worker_backend_label(const DmxWorkerConfig *cfg);
+/* One-line description of the backend, e.g. "native C + Metal". */
+const char *dmx_worker_backend_detail(const DmxWorkerConfig *cfg);
 
 /* Spawn worker for one job. Updates live asynchronously via monitor thread.
  * Call from a background thread; blocks until process exits. */

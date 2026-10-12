@@ -72,7 +72,7 @@ int dmx_worker_run_job(const DmxWorkerConfig *cfg, DmxJob *job, DmxWorkerLive *l
     }
     argv[a++] = (char *)job->prepared_audio;
     argv[a++] = "-n";
-    argv[a++] = (char *)cfg->model_name;
+    argv[a++] = DMX_MODEL_NAME;
     argv[a++] = "-o";
     argv[a++] = (char *)job->out_dir;
     argv[a++] = "--track-name";

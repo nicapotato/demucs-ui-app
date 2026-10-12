@@ -17,7 +17,6 @@ typedef struct {
   int output_dir_accepted; /* 1 after user picks a folder (or --out on CLI) */
   int processing_enabled;  /* 1 = Start pressed; dequeue jobs when idle */
   char status_line[DMX_MSG_MAX];
-  int model_index; /* 0=htdemucs_6s, 1=htdemucs */
   int write_mp3;
   int cancel_pressed;
   Texture2D logo_tex;
@@ -38,5 +37,7 @@ void dmx_app_load_branding(DmxApp *app);
 
 /* Count jobs still waiting in the queue (DMX_JOB_QUEUED). */
 int dmx_app_queued_count(const DmxApp *app);
+/* Count jobs with the given status. */
+int dmx_app_status_count(const DmxApp *app, DmxJobStatus status);
 
 #endif

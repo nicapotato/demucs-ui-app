@@ -86,25 +86,26 @@ static int afconvert_to_44100_wav(const char *src, char *out, size_t out_sz, cha
 }
 #endif
 
-int dmx_app_queued_count(const DmxApp *app) {
+int dmx_app_status_count(const DmxApp *app, DmxJobStatus status) {
   if (!app) {
     return 0;
   }
   int n = 0;
   for (int i = 0; i < app->queue.count; ++i) {
-    if (app->queue.jobs[i].status == DMX_JOB_QUEUED) {
+    if (app->queue.jobs[i].status == status) {
       ++n;
     }
   }
   return n;
 }
 
+int dmx_app_queued_count(const DmxApp *app) { return dmx_app_status_count(app, DMX_JOB_QUEUED); }
+
 void dmx_app_init(DmxApp *app) {
   memset(app, 0, sizeof *app);
   dmx_queue_init(&app->queue);
   dmx_worker_config_defaults(&app->worker_cfg);
   dmx_worker_live_reset(&app->live);
-  app->model_index = 0;
   app->write_mp3 = 1;
   app->output_dir[0] = '\0';
   app->output_dir_accepted = 0;
@@ -114,10 +115,8 @@ void dmx_app_init(DmxApp *app) {
   if (dmx_worker_resolve(&app->worker_cfg, err, sizeof err) != 0) {
     snprintf(app->status_line, sizeof app->status_line, "%s", err);
   } else if (dmx_worker_is_native(&app->worker_cfg)) {
-    app->model_index = 0;
-    snprintf(app->status_line, sizeof app->status_line,
-             "%s (htdemucs_6s). Add files, pick output, Start",
-             dmx_worker_native_label(&app->worker_cfg));
+    snprintf(app->status_line, sizeof app->status_line, "%s worker (%s). Add files, pick output, Start",
+             dmx_worker_backend_label(&app->worker_cfg), DMX_MODEL_NAME);
   } else {
     snprintf(app->status_line, sizeof app->status_line,
              "Add files, pick an output folder, then press Start");
@@ -182,17 +181,7 @@ void dmx_app_shutdown(DmxApp *app) {
   }
 }
 
-void dmx_app_apply_settings(DmxApp *app) {
-  if (dmx_worker_is_native(&app->worker_cfg)) {
-    app->model_index = 0;
-  }
-  if (app->model_index == 0) {
-    snprintf(app->worker_cfg.model_name, sizeof app->worker_cfg.model_name, "htdemucs_6s");
-  } else {
-    snprintf(app->worker_cfg.model_name, sizeof app->worker_cfg.model_name, "htdemucs");
-  }
-  app->worker_cfg.write_mp3 = app->write_mp3;
-}
+void dmx_app_apply_settings(DmxApp *app) { app->worker_cfg.write_mp3 = app->write_mp3; }
 
 void dmx_app_set_output_dir(DmxApp *app, const char *dir) {
   if (!app || !dir || !dir[0]) {
@@ -408,6 +397,17 @@ void dmx_app_tick(DmxApp *app) {
         snprintf(next->message, sizeof next->message, "Failed to spawn worker thread");
         app->queue.active_index = -1;
         app->worker_thread = NULL;
+      }
+    } else {
+      app->processing_enabled = 0;
+      int done = dmx_app_status_count(app, DMX_JOB_DONE);
+      int failed = dmx_app_status_count(app, DMX_JOB_ERROR) + dmx_app_status_count(app, DMX_JOB_CANCELLED);
+      if (failed > 0) {
+        snprintf(app->status_line, sizeof app->status_line, "All jobs finished: %d done, %d failed or cancelled",
+                 done, failed);
+      } else {
+        snprintf(app->status_line, sizeof app->status_line, "All jobs finished: %d done -> %s", done,
+                 app->output_dir);
       }
     }
   }
