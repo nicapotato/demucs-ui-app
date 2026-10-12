@@ -13,10 +13,12 @@
 #endif
 #endif
 
+#ifndef DMX_PREFS_DIR_NAME
 #ifdef _WIN32
-#define DMX_PREFS_DIR_NAME "demucs-cuda-windows"
+#define DMX_PREFS_DIR_NAME "demucs-torch-windows"
 #else
-#define DMX_PREFS_DIR_NAME "demucs-mlx-arm-mac-silicon"
+#define DMX_PREFS_DIR_NAME "demucs-mlx-c-arm-mac-silicon"
+#endif
 #endif
 #define DMX_PREFS_FILE_NAME "prefs.conf"
 #define DMX_PREFS_KEY "OUTPUT_DIR="

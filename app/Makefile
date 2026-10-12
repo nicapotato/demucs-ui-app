@@ -1,5 +1,6 @@
-# demucs-ui-app (raylib GUI). Workers live in git submodules.
-# macOS default worker is the native mlx-c binary; the PyInstaller worker is kept as *-py targets.
+# demucs-ui-app (raylib GUI). One standalone app per worker flavor.
+# Default mac flavor is mlx-c. Workers can be fetched from the pinned release
+# (worker-fetch-*) or built from the git submodule (worker / worker-py).
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 REPO := $(abspath $(ROOT)/..)
 MLX := $(REPO)/workers/demucs-mac-silicon
@@ -8,7 +9,17 @@ C_MLX ?= $(if $(wildcard $(SIBLING_MLX)/worker-c/CMakeLists.txt),$(SIBLING_MLX),
 WINW := $(REPO)/workers/demucs-windows
 CUDA_C ?= $(abspath $(REPO)/../demucs-cuda)
 BUILD := $(ROOT)/build
-BIN := $(BUILD)/demucs_mlx_app
+DMX_VARIANT ?= mlx-c
+ifeq ($(DMX_VARIANT),mlx-py)
+APP_EXEC := DemucsMlxPyArmMacSilicon
+else ifeq ($(DMX_VARIANT),torch)
+APP_EXEC := DemucsTorchWindows
+else ifeq ($(DMX_VARIANT),cuda)
+APP_EXEC := DemucsCudaWindows
+else
+APP_EXEC := DemucsMlxCArmMacSilicon
+endif
+BIN := $(BUILD)/$(APP_EXEC)
 PYTHON := $(MLX)/.venv/bin/python
 C_PYTHON ?= $(C_MLX)/.venv/bin/python
 DIST_WORKER := $(ROOT)/dist/worker
@@ -17,8 +28,11 @@ C_CACHE ?= $(ROOT)/models
 RUN_ENV := DEMUCS_MLX_WORKER="$(C_WORKER)" DEMUCS_MLX_CACHE="$(C_CACHE)"
 RUN_PY_ENV := DEMUCS_MLX_PYTHON="$(PYTHON)" DEMUCS_MLX_CACHE="$(ROOT)/models" PYTHONPATH="$(MLX)"
 
-.PHONY: all configure build run run-py run-c process process-py process-c clean bundle bundle-py worker worker-py \
-	worker-c worker-torch worker-cuda models models-py check-c verify-mp3 verify-psarc verify-psarc-mac externals version
+.PHONY: all configure build run run-py run-c process process-py process-c clean \
+	bundle bundle-mlx-c bundle-mlx-py bundle-py \
+	worker worker-py worker-c worker-torch worker-cuda \
+	worker-fetch-c worker-fetch-py \
+	models models-py check-c verify-mp3 verify-psarc verify-psarc-mac externals version
 
 all: build
 
@@ -28,7 +42,8 @@ externals:
 configure: externals
 	@mkdir -p "$(BUILD)"
 	cd "$(BUILD)" && cmake .. -DCMAKE_BUILD_TYPE=Release \
-		-DCMAKE_OSX_DEPLOYMENT_TARGET=13.0
+		-DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
+		-DDMX_VARIANT="$(DMX_VARIANT)"
 
 build: configure
 	cmake --build "$(BUILD)" -j
@@ -38,10 +53,10 @@ version: build
 	"$(BIN)" --version
 
 check-c:
-	@test -f "$(C_WORKER)" -a -x "$(C_WORKER)" || (echo "ERROR: missing C worker at $(C_WORKER). Run: make -C app worker" >&2; exit 1)
+	@test -f "$(C_WORKER)" -a -x "$(C_WORKER)" || (echo "ERROR: missing C worker at $(C_WORKER). Run: make -C app worker-fetch-c" >&2; exit 1)
 	@test -f "$(dir $(C_WORKER))mlx.metallib" || (echo "ERROR: missing mlx.metallib beside $(C_WORKER)" >&2; exit 1)
-	@test -f "$(C_CACHE)/htdemucs_6s.safetensors" || (echo "ERROR: missing $(C_CACHE)/htdemucs_6s.safetensors. Run: make -C app models" >&2; exit 1)
-	@test -f "$(C_CACHE)/htdemucs_6s.json" || (echo "ERROR: missing $(C_CACHE)/htdemucs_6s.json. Run: make -C app models" >&2; exit 1)
+	@test -f "$(C_CACHE)/htdemucs_6s.safetensors" || (echo "ERROR: missing $(C_CACHE)/htdemucs_6s.safetensors. Run: make -C app worker-fetch-c" >&2; exit 1)
+	@test -f "$(C_CACHE)/htdemucs_6s.json" || (echo "ERROR: missing $(C_CACHE)/htdemucs_6s.json. Run: make -C app worker-fetch-c" >&2; exit 1)
 
 run: build check-c
 	$(RUN_ENV) "$(BIN)" --mp3
@@ -84,7 +99,7 @@ verify-psarc-mac: build check-c
 	test -f "$(ROOT)/build/verify_out/$$base/guitar.mp3" && \
 	echo "verify-psarc-mac OK ($$base)"
 
-# safetensors + json for the C worker (converts the MLX pickle first if needed).
+# From-source C-export (submodule / sibling checkout). CI uses worker-fetch-c instead.
 models:
 	@test -f "$(C_MLX)/scripts/export_safetensors.py" || (echo "ERROR: $(C_MLX) has no scripts/export_safetensors.py (git submodule update --init --recursive)" >&2; exit 1)
 	@test -x "$(C_PYTHON)" || (echo "ERROR: missing $(C_PYTHON). From $(C_MLX): uv venv && uv pip install -e '.[convert]'" >&2; exit 1)
@@ -97,6 +112,12 @@ models-py:
 	@test -d "$(MLX)/demucs_mlx" || (echo "ERROR: missing workers/demucs-mac-silicon submodule (git submodule update --init --recursive)" >&2; exit 1)
 	@mkdir -p "$(ROOT)/models"
 	DEMUCS_MLX_CACHE="$(ROOT)/models" PYTHONPATH="$(MLX)" "$(PYTHON)" -c "from demucs_mlx.model_converter import get_mlx_model; get_mlx_model('htdemucs_6s'); print('ok')"
+
+worker-fetch-c:
+	bash "$(ROOT)/scripts/fetch_mac_worker.sh" mlx-c
+
+worker-fetch-py:
+	bash "$(ROOT)/scripts/fetch_mac_worker.sh" mlx-py
 
 worker:
 	$(MAKE) -C "$(C_MLX)" worker
@@ -126,11 +147,19 @@ worker-cuda:
 	cp "$(CUDA_C)/worker-cuda/build/demucs_cuda_worker.exe" "$(DIST_WORKER)/demucs_cuda_worker.exe"
 	cp "$(CUDA_C)/models/htdemucs_6s.fp16.safetensors" "$(CUDA_C)/models/htdemucs_6s.json" "$(ROOT)/models/"
 
-bundle: build worker models
-	DMX_WORKER_KIND=c bash "$(ROOT)/scripts/build_app.sh"
+bundle: bundle-mlx-c
 
-bundle-py: build worker-py models-py
-	DMX_WORKER_KIND=py bash "$(ROOT)/scripts/build_app.sh"
+bundle-mlx-c:
+	$(MAKE) build DMX_VARIANT=mlx-c
+	$(MAKE) worker-fetch-c
+	DMX_VARIANT=mlx-c bash "$(ROOT)/scripts/build_app.sh"
+
+bundle-mlx-py:
+	$(MAKE) build DMX_VARIANT=mlx-py
+	$(MAKE) worker-fetch-py
+	DMX_VARIANT=mlx-py bash "$(ROOT)/scripts/build_app.sh"
+
+bundle-py: bundle-mlx-py
 
 run-c: run
 process-c: process

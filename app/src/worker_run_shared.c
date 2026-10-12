@@ -19,6 +19,14 @@
 #define dmx_access access
 #endif
 
+#ifndef DMX_CACHE_DIR_NAME
+#ifdef _WIN32
+#define DMX_CACHE_DIR_NAME "demucs-torch-windows"
+#else
+#define DMX_CACHE_DIR_NAME "demucs-mlx-c-arm-mac-silicon"
+#endif
+#endif
+
 void dmx_worker_config_defaults(DmxWorkerConfig *cfg) {
   memset(cfg, 0, sizeof *cfg);
   cfg->write_mp3 = 1;
@@ -367,14 +375,14 @@ int dmx_worker_resolve(DmxWorkerConfig *cfg, char *err, size_t err_sz) {
 #ifdef _WIN32
       const char *appdata = getenv("LOCALAPPDATA");
       if (appdata && appdata[0]) {
-        snprintf(cfg->model_cache_dir, sizeof cfg->model_cache_dir, "%s\\demucs-cuda-windows\\models",
-                 appdata);
+        snprintf(cfg->model_cache_dir, sizeof cfg->model_cache_dir, "%s\\%s\\models",
+                 appdata, DMX_CACHE_DIR_NAME);
       }
 #else
       const char *home = getenv("HOME");
       if (home) {
-        snprintf(cfg->model_cache_dir, sizeof cfg->model_cache_dir,
-                 "%s/.cache/demucs-mlx-arm-mac-silicon", home);
+        snprintf(cfg->model_cache_dir, sizeof cfg->model_cache_dir, "%s/.cache/%s", home,
+                 DMX_CACHE_DIR_NAME);
       }
 #endif
     }

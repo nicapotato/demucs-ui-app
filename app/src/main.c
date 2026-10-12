@@ -11,12 +11,19 @@
 #ifndef DMX_APP_VERSION
 #define DMX_APP_VERSION "0.0.0"
 #endif
+#ifndef DMX_APP_NAME
 #ifdef _WIN32
-#define DMX_APP_NAME "Demucs CUDA Windows"
-#define DMX_APP_USAGE "DemucsCudaWindows"
+#define DMX_APP_NAME "Demucs Torch Windows"
 #else
-#define DMX_APP_NAME "Demucs MLX ARM Mac Silicon"
-#define DMX_APP_USAGE "DemucsMlxArmMacSilicon"
+#define DMX_APP_NAME "Demucs MLX-C ARM Mac Silicon"
+#endif
+#endif
+#ifndef DMX_APP_USAGE
+#ifdef _WIN32
+#define DMX_APP_USAGE "DemucsTorchWindows"
+#else
+#define DMX_APP_USAGE "DemucsMlxCArmMacSilicon"
+#endif
 #endif
 
 static int parse_cli(int argc, char **argv, DmxApp *app, int *out_file_args, int *out_force_headless) {

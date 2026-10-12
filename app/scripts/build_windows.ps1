@@ -1,21 +1,35 @@
-# Assemble Demucs CUDA Windows zip: GUI + frozen torch worker + models + resources.
+# Assemble a dedicated Windows zip for one worker flavor (torch default; cuda later).
 # The GUI is /MT + vcpkg x64-windows-static (no VC++ redist prompt).
 $ErrorActionPreference = "Stop"
 
 $Root = Split-Path -Parent $PSScriptRoot
 $Repo = Split-Path -Parent $Root
+$Variant = if ($env:DMX_VARIANT) { $env:DMX_VARIANT } else { "torch" }
+
+switch ($Variant) {
+    "cuda" {
+        $AppExec = "DemucsCudaWindows"
+        $ZipName = "demucs-cuda-windows.zip"
+        $Display = "Demucs CUDA Windows"
+    }
+    default {
+        $Variant = "torch"
+        $AppExec = "DemucsTorchWindows"
+        $ZipName = "demucs-torch-windows.zip"
+        $Display = "Demucs Torch Windows"
+    }
+}
+
 $ExeCandidates = @(
-    (Join-Path $Root "build\Release\DemucsCudaWindows.exe"),
-    (Join-Path $Root "build\DemucsCudaWindows.exe")
+    (Join-Path $Root "build\Release\$AppExec.exe"),
+    (Join-Path $Root "build\$AppExec.exe")
 )
 $Exe = $ExeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
 $WorkerDir = Join-Path $Root "dist\worker\demucs_torch_worker"
-# Native C/CUDA worker (single exe, fp16 weights) wins over the PyInstaller torch worker.
 $CudaWorker = Join-Path $Root "dist\worker\demucs_cuda_worker.exe"
 $Models = Join-Path $Root "models"
 $Branding = Join-Path $Repo "resources"
-$Release = Join-Path $Root "dist\DemucsCudaWindows"
-$ZipName = "demucs-cuda-windows.zip"
+$Release = Join-Path $Root "dist\$AppExec"
 $ZipPath = Join-Path $Root "dist\$ZipName"
 
 $Version = "0.0.0"
@@ -27,23 +41,28 @@ if (Test-Path $Conf) {
         if (-not $Version) { $Version = "0.0.0" }
     }
 }
-Write-Host "Packaging Demucs CUDA Windows v$Version"
+Write-Host "Packaging $Display v$Version (variant: $Variant)"
 
 if (-not $Exe) {
-    Write-Error "Build the GUI first (CMake Release). Missing DemucsCudaWindows.exe"
+    Write-Error "Build the GUI first (CMake Release -DDMX_VARIANT=$Variant). Missing $AppExec.exe"
 }
-$UseCuda = Test-Path $CudaWorker
-if (-not $UseCuda -and -not (Test-Path (Join-Path $WorkerDir "demucs_torch_worker.exe"))) {
-    Write-Error "Build a worker first: make -C app worker-cuda (or worker-torch)"
+
+if ($Variant -eq "cuda") {
+    if (-not (Test-Path $CudaWorker)) {
+        Write-Error "Build the CUDA worker first: make -C app worker-cuda"
+    }
+} elseif (-not (Test-Path (Join-Path $WorkerDir "demucs_torch_worker.exe"))) {
+    Write-Error "Build the torch worker first: make -C app worker-torch"
 }
+
 if (-not (Test-Path $Branding)) {
     Write-Error "Missing branding resources at $Branding"
 }
 
 if (Test-Path $Release) { Remove-Item -Recurse -Force $Release }
 New-Item -ItemType Directory -Force -Path $Release | Out-Null
-Copy-Item -Force $Exe (Join-Path $Release "DemucsCudaWindows.exe")
-if ($UseCuda) {
+Copy-Item -Force $Exe (Join-Path $Release "$AppExec.exe")
+if ($Variant -eq "cuda") {
     Write-Host "Worker: native CUDA ($CudaWorker)"
     New-Item -ItemType Directory -Force -Path (Join-Path $Release "worker") | Out-Null
     Copy-Item -Force $CudaWorker (Join-Path $Release "worker\demucs_cuda_worker.exe")
@@ -58,7 +77,7 @@ if (Test-Path $Models) {
 Copy-Item -Recurse -Force $Branding (Join-Path $Release "resources")
 
 # GUI is statically linked (/MT + x64-windows-static). Do not copy msvcp140/vcruntime
-# next to DemucsCudaWindows.exe — that reintroduces a VC++ redist dependency.
+# next to the exe — that reintroduces a VC++ redist dependency.
 
 if (Test-Path $ZipPath) { Remove-Item -Force $ZipPath }
 Compress-Archive -Path "$Release\*" -DestinationPath $ZipPath -Force
