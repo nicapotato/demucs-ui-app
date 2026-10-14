@@ -11,11 +11,16 @@ PUBLISH_ITCH ?= true
 PUBLISH_GH_RELEASE ?= true
 BUILD_PLATFORM ?= all
 
-.PHONY: run run-c run-py process process-c process-py build bundle bundle-py verify-mp3 verify-psarc \
-	models models-py worker worker-c worker-py clean ci ci-watch release release-watch
+.PHONY: run run-c run-py process process-c process-py build \
+	bundle bundle-mlx-c bundle-mlx-py bundle-py \
+	verify-mp3 verify-psarc models models-py \
+	worker worker-c worker-py worker-fetch-c worker-fetch-py worker-fetch-cuda \
+	clean ci ci-watch release release-watch
 
-run run-c run-py process process-c process-py build bundle bundle-py verify-mp3 verify-psarc \
-models models-py worker worker-c worker-py clean:
+run run-c run-py process process-c process-py build \
+bundle bundle-mlx-c bundle-mlx-py bundle-py \
+verify-mp3 verify-psarc models models-py \
+worker worker-c worker-py worker-fetch-c worker-fetch-py worker-fetch-cuda clean:
 	$(MAKE) -C app $@
 
 ci:

@@ -41,6 +41,46 @@ if(EXISTS "${DMX_PROJECT_CONF}")
 endif()
 message(STATUS "Demucs UI version: ${DMX_APP_VERSION}")
 
+# One standalone app per worker. Default matches the host OS.
+set(DMX_VARIANT "" CACHE STRING "App flavor: mlx-c, mlx-py, torch, cuda")
+if(DMX_VARIANT STREQUAL "")
+  if(WIN32)
+    set(DMX_VARIANT "torch")
+  else()
+    set(DMX_VARIANT "mlx-c")
+  endif()
+endif()
+if(WIN32)
+  if(NOT DMX_VARIANT MATCHES "^(torch|cuda)$")
+    message(FATAL_ERROR "Windows DMX_VARIANT must be torch or cuda (got '${DMX_VARIANT}')")
+  endif()
+else()
+  if(NOT DMX_VARIANT MATCHES "^(mlx-c|mlx-py)$")
+    message(FATAL_ERROR "macOS DMX_VARIANT must be mlx-c or mlx-py (got '${DMX_VARIANT}')")
+  endif()
+endif()
+if(DMX_VARIANT STREQUAL "mlx-c")
+  set(DMX_APP_NAME "Demucs MLX-C ARM Mac Silicon")
+  set(DMX_APP_USAGE "DemucsMlxCArmMacSilicon")
+  set(DMX_PREFS_DIR_NAME "demucs-mlx-c-arm-mac-silicon")
+elseif(DMX_VARIANT STREQUAL "mlx-py")
+  set(DMX_APP_NAME "Demucs MLX-Py ARM Mac Silicon")
+  set(DMX_APP_USAGE "DemucsMlxPyArmMacSilicon")
+  set(DMX_PREFS_DIR_NAME "demucs-mlx-py-arm-mac-silicon")
+elseif(DMX_VARIANT STREQUAL "torch")
+  set(DMX_APP_NAME "Demucs Torch Windows")
+  set(DMX_APP_USAGE "DemucsTorchWindows")
+  set(DMX_PREFS_DIR_NAME "demucs-torch-windows")
+elseif(DMX_VARIANT STREQUAL "cuda")
+  set(DMX_APP_NAME "Demucs CUDA Windows")
+  set(DMX_APP_USAGE "DemucsCudaWindows")
+  set(DMX_PREFS_DIR_NAME "demucs-cuda-windows")
+else()
+  message(FATAL_ERROR "Unknown DMX_VARIANT=${DMX_VARIANT}")
+endif()
+set(DMX_CACHE_DIR_NAME "${DMX_PREFS_DIR_NAME}")
+message(STATUS "Demucs UI variant: ${DMX_VARIANT} (${DMX_APP_USAGE})")
+
 set(RS_PREBUILT_INCLUDE "${RS_PREBUILT_DIR}/include")
 if(NOT EXISTS "${RS_PREBUILT_INCLUDE}/rocksmith_psarc.h")
   message(FATAL_ERROR "Missing ${RS_PREBUILT_INCLUDE}/rocksmith_psarc.h")
@@ -157,9 +197,7 @@ add_executable(demucs_mlx_app
   ${DMX_PLATFORM_SRC}
   "${TINYFD_DIR}/tinyfiledialogs.c"
 )
-if(WIN32)
-  set_target_properties(demucs_mlx_app PROPERTIES OUTPUT_NAME DemucsCudaWindows)
-endif()
+set_target_properties(demucs_mlx_app PROPERTIES OUTPUT_NAME "${DMX_APP_USAGE}")
 
 target_include_directories(demucs_mlx_app PRIVATE
   "${APP_ROOT}/src"
@@ -167,8 +205,15 @@ target_include_directories(demucs_mlx_app PRIVATE
   "${RS_PREBUILT_INCLUDE}"
 )
 
+string(TOUPPER "${DMX_VARIANT}" DMX_VARIANT_UPPER)
+string(REPLACE "-" "_" DMX_VARIANT_UPPER "${DMX_VARIANT_UPPER}")
 target_compile_definitions(demucs_mlx_app PRIVATE
   "DMX_APP_VERSION=\"${DMX_APP_VERSION}\""
+  "DMX_APP_NAME=\"${DMX_APP_NAME}\""
+  "DMX_APP_USAGE=\"${DMX_APP_USAGE}\""
+  "DMX_PREFS_DIR_NAME=\"${DMX_PREFS_DIR_NAME}\""
+  "DMX_CACHE_DIR_NAME=\"${DMX_CACHE_DIR_NAME}\""
+  "DMX_VARIANT_${DMX_VARIANT_UPPER}=1"
 )
 
 # Link order: app glue -> vgmstream -> vorbis/ogg -> zlib

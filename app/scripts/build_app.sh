@@ -1,38 +1,60 @@
 #!/usr/bin/env bash
-# Assemble DemucsMlxArmMacSilicon.app for local / itch distribution.
+# Assemble a dedicated macOS .app for one worker flavor.
+# DMX_VARIANT=mlx-c (default) or mlx-py. DMX_WORKER_KIND=c|py is accepted as an alias.
 set -euo pipefail
 
-# DMX_WORKER_KIND=c (default): native mlx-c worker + safetensors weights.
-# DMX_WORKER_KIND=py: PyInstaller onedir worker + MLX pickle weights.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REPO="$(cd "$ROOT/.." && pwd)"
-BIN="$ROOT/build/demucs_mlx_app"
-WORKER_KIND="${DMX_WORKER_KIND:-c}"
 MODELS="$ROOT/models"
-case "$WORKER_KIND" in
-  c)
+VARIANT="${DMX_VARIANT:-}"
+if [[ -z "$VARIANT" ]]; then
+  case "${DMX_WORKER_KIND:-c}" in
+    c) VARIANT="mlx-c" ;;
+    py) VARIANT="mlx-py" ;;
+    mlx-c|mlx-py) VARIANT="$DMX_WORKER_KIND" ;;
+    *)
+      echo "DMX_VARIANT must be mlx-c or mlx-py (got '${DMX_WORKER_KIND:-}')" >&2
+      exit 1
+      ;;
+  esac
+fi
+
+case "$VARIANT" in
+  mlx-c|c)
+    VARIANT="mlx-c"
+    WORKER_KIND="c"
+    APP_NAME="DemucsMlxCArmMacSilicon"
+    APP_DISPLAY="Demucs MLX-C ARM Mac Silicon"
+    BUNDLE_ID="com.nicapotato.demucs-mlx-c-arm-mac-silicon"
+    ZIP_NAME="demucs-mlx-c-arm-mac-silicon.zip"
     WORKER_DIR="$ROOT/dist/worker"
     WORKER_FILES=(demucs_mlx_worker mlx.metallib)
     MODEL_FILES=(htdemucs_6s.safetensors htdemucs_6s.json)
-    WORKER_HINT="make -C app worker"
-    MODELS_HINT="make -C app models"
+    WORKER_HINT="make -C app worker-fetch-c"
+    MODELS_HINT="make -C app worker-fetch-c"
     ;;
-  py)
+  mlx-py|py)
+    VARIANT="mlx-py"
+    WORKER_KIND="py"
+    APP_NAME="DemucsMlxPyArmMacSilicon"
+    APP_DISPLAY="Demucs MLX-Py ARM Mac Silicon"
+    BUNDLE_ID="com.nicapotato.demucs-mlx-py-arm-mac-silicon"
+    ZIP_NAME="demucs-mlx-py-arm-mac-silicon.zip"
     WORKER_DIR="$ROOT/dist/worker/demucs_mlx_worker"
     WORKER_FILES=()
-    MODEL_FILES=(htdemucs_6s_mlx.pkl)
-    WORKER_HINT="make -C app worker-py"
-    MODELS_HINT="make -C app models-py"
+    MODEL_FILES=(htdemucs_6s.safetensors htdemucs_6s_config.json)
+    WORKER_HINT="make -C app worker-fetch-py"
+    MODELS_HINT="make -C app worker-fetch-py"
     ;;
   *)
-    echo "DMX_WORKER_KIND must be 'c' or 'py' (got '$WORKER_KIND')" >&2
+    echo "DMX_VARIANT must be mlx-c or mlx-py (got '$VARIANT')" >&2
     exit 1
     ;;
 esac
+
+BIN="$ROOT/build/${APP_NAME}"
 BRANDING="$REPO/resources"
-APP_NAME="DemucsMlxArmMacSilicon"
-APP_EXEC="DemucsMlxArmMacSilicon"
-ZIP_NAME="demucs-mlx-arm-mac-silicon.zip"
+APP_EXEC="$APP_NAME"
 APP="$ROOT/dist/${APP_NAME}.app"
 CONTENTS="$APP/Contents"
 MACOS="$CONTENTS/MacOS"
@@ -46,14 +68,14 @@ if [[ -f "$REPO/project.conf" ]]; then
     VERSION="0.0.0"
   fi
 fi
-echo "Packaging ${APP_NAME} v${VERSION} (worker: ${WORKER_KIND})"
+echo "Packaging ${APP_NAME} v${VERSION} (variant: ${VARIANT})"
 
 if [[ ! -x "$BIN" ]]; then
-  echo "Build the GUI first: make -C app build" >&2
+  echo "Build the GUI first: make -C app build DMX_VARIANT=${VARIANT}" >&2
   exit 1
 fi
 if [[ ! -f "$WORKER_DIR/demucs_mlx_worker" || ! -x "$WORKER_DIR/demucs_mlx_worker" ]]; then
-  echo "Build the worker first: $WORKER_HINT" >&2
+  echo "Fetch or build the worker first: $WORKER_HINT" >&2
   exit 1
 fi
 for f in "${WORKER_FILES[@]+"${WORKER_FILES[@]}"}"; do
@@ -147,9 +169,9 @@ cat >"$CONTENTS/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>Demucs MLX ARM Mac Silicon</string>
-  <key>CFBundleDisplayName</key><string>Demucs MLX ARM Mac Silicon</string>
-  <key>CFBundleIdentifier</key><string>com.nicapotato.demucs-mlx-arm-mac-silicon</string>
+  <key>CFBundleName</key><string>${APP_DISPLAY}</string>
+  <key>CFBundleDisplayName</key><string>${APP_DISPLAY}</string>
+  <key>CFBundleIdentifier</key><string>${BUNDLE_ID}</string>
   <key>CFBundleVersion</key><string>${VERSION}</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
   <key>CFBundlePackageType</key><string>APPL</string>
