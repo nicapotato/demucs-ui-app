@@ -14,7 +14,7 @@ on:
         default: true
         type: boolean
       build_platform:
-        description: "macos / macos-c / macos-py / windows / all"
+        description: "macos / macos-c / macos-py / windows / windows-cuda / all"
         required: false
         default: "all"
         type: choice
@@ -24,6 +24,7 @@ on:
           - macos-c
           - macos-py
           - windows
+          - windows-cuda
 
 concurrency:
   group: ci-${{ github.sha }}
@@ -395,3 +396,164 @@ jobs:
             "${ITCH_USER}/${ITCH_GAME}:torch-windows" \
             --userversion "${VERSION}"
           echo "Pushed to itch.io ${ITCH_USER}/${ITCH_GAME}:torch-windows @ ${VERSION}"
+
+  build-windows-cuda:
+    # GUI + pinned demucs-cuda worker. Hosted runners have no NVIDIA GPU, so this
+    # job does not run stem-separation smoke. Explicit platform only (not in `all`)
+    # so prod itch (demucs-app) stays torch until cuda is tested on demucs-app-dev.
+    runs-on: windows-latest
+    timeout-minutes: 40
+    needs: read-version
+    if: contains(fromJSON('["windows-cuda"]'), github.event.inputs.build_platform)
+    env:
+      BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+      VERSION: ${{ needs.read-version.outputs.version }}
+      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+      DMX_VARIANT: cuda
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Block re-runs
+        if: github.run_attempt != 1
+        shell: bash
+        run: |
+          echo "::error::Re-runs are disabled (attempt ${{ github.run_attempt }}). Dispatch a new run instead." >&2
+          exit 1
+
+      - name: Checkout demucs-ui-app
+        uses: actions/checkout@v4
+
+      - name: Clone and bootstrap vcpkg
+        shell: cmd
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git "%GITHUB_WORKSPACE%\vcpkg"
+          call "%GITHUB_WORKSPACE%\vcpkg\bootstrap-vcpkg.bat"
+
+      - name: Restore vcpkg downloads and installed trees
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/vcpkg/downloads
+            ${{ github.workspace }}/vcpkg/installed
+          key: vcpkg-${{ runner.os }}-x64-dmx-static-v1
+
+      - name: Install vcpkg ports
+        shell: cmd
+        run: |
+          "%GITHUB_WORKSPACE%\vcpkg\vcpkg.exe" install zlib:x64-windows-static libogg:x64-windows-static libvorbis:x64-windows-static
+          if errorlevel 1 exit /b 1
+
+      - name: Restore vgmstream checkout
+        uses: actions/cache@v4
+        with:
+          path: app/external/rocksmith-psarc-src/external/vgmstream
+          key: vgmstream-${{ hashFiles('app/scripts/vendor_vgmstream.sh') }}
+
+      - name: Wire externals (raylib + vgmstream)
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x app/scripts/*.sh
+          bash app/scripts/setup_externals.sh
+
+      - name: Configure and build GUI (CMake Release, MSVC + vcpkg)
+        shell: cmd
+        working-directory: app
+        run: |
+          set "TOOLCHAIN=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake"
+          cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=%TOOLCHAIN% -DVCPKG_TARGET_TRIPLET=x64-windows-static -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DDMX_VARIANT=cuda -A x64
+          if errorlevel 1 exit /b 1
+          cmake --build build --config Release --parallel -- /verbosity:minimal /nologo
+          if errorlevel 1 exit /b 1
+
+      - name: Smoke --version
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXE="app/build/Release/DemucsCudaWindows.exe"
+          test -f "$EXE"
+          "$EXE" --version
+          "$EXE" --version | grep -F "${VERSION}"
+
+      - name: Assert GUI is /MT (no VC++ redist DLLs)
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          $dumpbin = & $vswhere -latest -find "**\dumpbin.exe" | Select-Object -First 1
+          if (-not $dumpbin) { Write-Error "dumpbin.exe not found"; exit 1 }
+          $exe = "app\build\Release\DemucsCudaWindows.exe"
+          $deps = & $dumpbin /DEPENDENTS $exe | Out-String
+          Write-Host $deps
+          foreach ($dll in @("VCRUNTIME140.dll", "VCRUNTIME140_1.dll", "MSVCP140.dll", "MSVCP140_1.dll", "MSVCP140_2.dll")) {
+            if ($deps -match [regex]::Escape($dll)) {
+              Write-Error "DemucsCudaWindows.exe still depends on $dll; expected static /MT"
+              exit 1
+            }
+          }
+
+      - name: Fetch pinned CUDA worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash app/scripts/fetch_cuda_worker.sh
+          test -f app/dist/worker/demucs_cuda_worker.exe
+          test -f app/models/htdemucs_6s.fp16.safetensors
+          test -f app/models/htdemucs_6s.json
+
+      - name: Package Windows zip
+        shell: pwsh
+        run: |
+          $env:DMX_VARIANT = "cuda"
+          pwsh -File app/scripts/build_windows.ps1
+          if (-not (Test-Path "app/dist/demucs-cuda-windows.zip")) { exit 1 }
+
+      - name: Smoke packaged worker (no GPU)
+        shell: pwsh
+        run: |
+          $exe = "app\dist\DemucsCudaWindows\worker\demucs_cuda_worker.exe"
+          $weights = "app\dist\DemucsCudaWindows\models\htdemucs_6s.fp16.safetensors"
+          $json = "app\dist\DemucsCudaWindows\models\htdemucs_6s.json"
+          if (-not (Test-Path $exe)) { Write-Error "missing $exe"; exit 1 }
+          if (-not (Test-Path $weights)) { Write-Error "missing $weights"; exit 1 }
+          if (-not (Test-Path $json)) { Write-Error "missing $json"; exit 1 }
+          & $exe --list-models
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Prepare zip artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          cp app/dist/demucs-cuda-windows.zip release-assets/
+          (
+            cd release-assets
+            sha256sum demucs-cuda-windows.zip | tee demucs-cuda-windows.zip.sha256
+          )
+
+      - name: Upload Windows CUDA zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: demucs-cuda-windows.zip
+          path: release-assets/*
+          if-no-files-found: error
+
+      - name: Setup butler
+        if: github.event.inputs.publish_itch == 'true'
+        uses: remarkablegames/setup-butler@v2
+        with:
+          butler-version: LATEST
+
+      - name: Push to itch.io (Windows CUDA)
+        if: github.event.inputs.publish_itch == 'true'
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${BUTLER_API_KEY:-}" ]; then
+            echo "ERROR: BUTLER_API_KEY secret is not set" >&2
+            exit 1
+          fi
+          butler push release-assets/demucs-cuda-windows.zip \
+            "${ITCH_USER}/${ITCH_GAME}:cuda-windows" \
+            --userversion "${VERSION}"
+          echo "Pushed to itch.io ${ITCH_USER}/${ITCH_GAME}:cuda-windows @ ${VERSION}"

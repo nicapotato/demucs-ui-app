@@ -31,7 +31,7 @@ RUN_PY_ENV := DEMUCS_MLX_PYTHON="$(PYTHON)" DEMUCS_MLX_CACHE="$(ROOT)/models" PY
 .PHONY: all configure build run run-py run-c process process-py process-c clean \
 	bundle bundle-mlx-c bundle-mlx-py bundle-py \
 	worker worker-py worker-c worker-torch worker-cuda \
-	worker-fetch-c worker-fetch-py \
+	worker-fetch-c worker-fetch-py worker-fetch-cuda \
 	models models-py check-c verify-mp3 verify-psarc verify-psarc-mac externals version
 
 all: build
@@ -119,6 +119,9 @@ worker-fetch-c:
 worker-fetch-py:
 	bash "$(ROOT)/scripts/fetch_mac_worker.sh" mlx-py
 
+worker-fetch-cuda:
+	bash "$(ROOT)/scripts/fetch_cuda_worker.sh"
+
 worker:
 	$(MAKE) -C "$(C_MLX)" worker
 	rm -rf "$(DIST_WORKER)"
@@ -140,7 +143,7 @@ worker-torch:
 	rm -rf "$(ROOT)/dist/worker/demucs_torch_worker"
 	cp -R "$(WINW)/dist/worker/demucs_torch_worker" "$(ROOT)/dist/worker/"
 
-# Native C/CUDA worker from a demucs-cuda checkout (Windows: build it there first, see its README).
+# Native C/CUDA worker from a sibling demucs-cuda checkout. CI uses worker-fetch-cuda.
 worker-cuda:
 	@test -f "$(CUDA_C)/worker-cuda/build/demucs_cuda_worker.exe" || (echo "ERROR: build $(CUDA_C)/worker-cuda/build/demucs_cuda_worker.exe first" >&2; exit 1)
 	mkdir -p "$(DIST_WORKER)" "$(ROOT)/models"

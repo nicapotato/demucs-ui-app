@@ -205,12 +205,15 @@ target_include_directories(demucs_mlx_app PRIVATE
   "${RS_PREBUILT_INCLUDE}"
 )
 
+string(TOUPPER "${DMX_VARIANT}" DMX_VARIANT_UPPER)
+string(REPLACE "-" "_" DMX_VARIANT_UPPER "${DMX_VARIANT_UPPER}")
 target_compile_definitions(demucs_mlx_app PRIVATE
   "DMX_APP_VERSION=\"${DMX_APP_VERSION}\""
   "DMX_APP_NAME=\"${DMX_APP_NAME}\""
   "DMX_APP_USAGE=\"${DMX_APP_USAGE}\""
   "DMX_PREFS_DIR_NAME=\"${DMX_PREFS_DIR_NAME}\""
   "DMX_CACHE_DIR_NAME=\"${DMX_CACHE_DIR_NAME}\""
+  "DMX_VARIANT_${DMX_VARIANT_UPPER}=1"
 )
 
 # Link order: app glue -> vgmstream -> vorbis/ogg -> zlib

@@ -1,4 +1,4 @@
-# Assemble a dedicated Windows zip for one worker flavor (torch default; cuda later).
+# Assemble a dedicated Windows zip for one worker flavor (torch or cuda).
 # The GUI is /MT + vcpkg x64-windows-static (no VC++ redist prompt).
 $ErrorActionPreference = "Stop"
 
@@ -49,7 +49,7 @@ if (-not $Exe) {
 
 if ($Variant -eq "cuda") {
     if (-not (Test-Path $CudaWorker)) {
-        Write-Error "Build the CUDA worker first: make -C app worker-cuda"
+        Write-Error "Fetch or build the CUDA worker first: make -C app worker-fetch-cuda"
     }
 } elseif (-not (Test-Path (Join-Path $WorkerDir "demucs_torch_worker.exe"))) {
     Write-Error "Build the torch worker first: make -C app worker-torch"

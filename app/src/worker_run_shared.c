@@ -267,25 +267,21 @@ int dmx_worker_resolve(DmxWorkerConfig *cfg, char *err, size_t err_sz) {
   }
 
 #ifdef _WIN32
+#ifdef DMX_VARIANT_CUDA
   const char *env_cuda_worker = getenv("DEMUCS_CUDA_WORKER");
+#else
   const char *env_torch_worker = getenv("DEMUCS_TORCH_WORKER");
   const char *env_torch_python = getenv("DEMUCS_TORCH_PYTHON");
-#endif
   const char *env_mlx_worker = getenv("DEMUCS_MLX_WORKER");
   const char *env_mlx_python = getenv("DEMUCS_MLX_PYTHON");
+#endif
+#else
+  const char *env_mlx_worker = getenv("DEMUCS_MLX_WORKER");
+  const char *env_mlx_python = getenv("DEMUCS_MLX_PYTHON");
+#endif
 
 #ifdef _WIN32
-  if (try_path(cfg, env_cuda_worker, NULL)) {
-    /* native C/CUDA worker */
-  } else if (try_path(cfg, env_torch_worker, NULL)) {
-    /* frozen torch worker */
-  } else if (try_path(cfg, env_mlx_worker, NULL)) {
-    /* frozen mlx worker (unexpected on Windows) */
-  } else if (try_path(cfg, env_torch_python, "demucs_torch.separate")) {
-    /* dev python -m */
-  } else if (try_path(cfg, env_mlx_python, "demucs_mlx.separate")) {
-    /* fallback */
-  } else {
+  {
     char exe[DMX_PATH_MAX];
     char exe_dir[DMX_PATH_MAX];
     char candidate[DMX_PATH_MAX];
@@ -294,25 +290,44 @@ int dmx_worker_resolve(DmxWorkerConfig *cfg, char *err, size_t err_sz) {
     }
     dmx_worker_dirname_copy(exe, exe_dir, sizeof exe_dir);
 
-    const char *worker_names[] = {"demucs_cuda_worker.exe", "demucs_torch_worker.exe"};
-    for (size_t w = 0; w < sizeof worker_names / sizeof worker_names[0]; w++) {
-      snprintf(candidate, sizeof candidate, "%s\\worker\\%s", exe_dir, worker_names[w]);
-      if (try_path(cfg, candidate, NULL)) {
-        break;
-      }
-      snprintf(candidate, sizeof candidate, "%s\\%s", exe_dir, worker_names[w]);
-      if (try_path(cfg, candidate, NULL)) {
-        break;
-      }
-    }
-    if (!dmx_worker_file_exists(cfg->python_or_worker)) {
-      snprintf(candidate, sizeof candidate,
-               "%s\\..\\..\\workers\\demucs-windows\\.venv\\Scripts\\python.exe", exe_dir);
-      if (!try_path(cfg, candidate, "demucs_torch.separate")) {
-        snprintf(err, err_sz, "No demucs worker found. Set DEMUCS_CUDA_WORKER, DEMUCS_TORCH_WORKER or DEMUCS_TORCH_PYTHON.");
-        return -1;
+#ifdef DMX_VARIANT_CUDA
+    if (try_path(cfg, env_cuda_worker, NULL)) {
+      /* native C/CUDA worker */
+    } else {
+      snprintf(candidate, sizeof candidate, "%s\\worker\\demucs_cuda_worker.exe", exe_dir);
+      if (!try_path(cfg, candidate, NULL)) {
+        snprintf(candidate, sizeof candidate, "%s\\demucs_cuda_worker.exe", exe_dir);
+        if (!try_path(cfg, candidate, NULL)) {
+          snprintf(err, err_sz, "No demucs CUDA worker found. Set DEMUCS_CUDA_WORKER.");
+          return -1;
+        }
       }
     }
+#else
+    if (try_path(cfg, env_torch_worker, NULL)) {
+      /* frozen torch worker */
+    } else if (try_path(cfg, env_mlx_worker, NULL)) {
+      /* frozen mlx worker (unexpected on Windows) */
+    } else if (try_path(cfg, env_torch_python, "demucs_torch.separate")) {
+      /* dev python -m */
+    } else if (try_path(cfg, env_mlx_python, "demucs_mlx.separate")) {
+      /* fallback */
+    } else {
+      snprintf(candidate, sizeof candidate, "%s\\worker\\demucs_torch_worker.exe", exe_dir);
+      if (!try_path(cfg, candidate, NULL)) {
+        snprintf(candidate, sizeof candidate, "%s\\demucs_torch_worker.exe", exe_dir);
+        if (!try_path(cfg, candidate, NULL)) {
+          snprintf(candidate, sizeof candidate,
+                   "%s\\..\\..\\workers\\demucs-windows\\.venv\\Scripts\\python.exe", exe_dir);
+          if (!try_path(cfg, candidate, "demucs_torch.separate")) {
+            snprintf(err, err_sz,
+                     "No demucs worker found. Set DEMUCS_TORCH_WORKER or DEMUCS_TORCH_PYTHON.");
+            return -1;
+          }
+        }
+      }
+    }
+#endif
   }
 #else
   if (try_path(cfg, env_mlx_worker, NULL)) {
@@ -347,9 +362,12 @@ int dmx_worker_resolve(DmxWorkerConfig *cfg, char *err, size_t err_sz) {
   }
 #endif
 
+  const char *env_cuda_cache = getenv("DEMUCS_CUDA_CACHE");
   const char *env_torch_cache = getenv("DEMUCS_TORCH_CACHE");
   const char *env_mlx_cache = getenv("DEMUCS_MLX_CACHE");
-  if (env_torch_cache && env_torch_cache[0]) {
+  if (env_cuda_cache && env_cuda_cache[0]) {
+    snprintf(cfg->model_cache_dir, sizeof cfg->model_cache_dir, "%s", env_cuda_cache);
+  } else if (env_torch_cache && env_torch_cache[0]) {
     snprintf(cfg->model_cache_dir, sizeof cfg->model_cache_dir, "%s", env_torch_cache);
   } else if (env_mlx_cache && env_mlx_cache[0]) {
     snprintf(cfg->model_cache_dir, sizeof cfg->model_cache_dir, "%s", env_mlx_cache);

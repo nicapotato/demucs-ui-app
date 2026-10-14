@@ -1,5 +1,6 @@
 #include "app_state.h"
 #include "platform/threads.h"
+#include "prefs.h"
 #include "ui.h"
 #include "util/resource_dir.h"
 
@@ -98,7 +99,13 @@ static int jobs_pending_or_failed(const DmxApp *app, int *out_failed) {
 /* Process queue without InitWindow / OpenGL (GitHub Actions macOS has no GPU display). */
 static int run_headless(DmxApp *app) {
   if (!app->output_dir_accepted || !app->output_dir[0]) {
-    fprintf(stderr, "ERROR: --out DIR is required (no default stem output folder)\n");
+    char def[1024];
+    if (dmx_prefs_default_output_dir(def, sizeof def) == 0) {
+      dmx_app_set_output_dir(app, def);
+    }
+  }
+  if (!app->output_dir_accepted || !app->output_dir[0]) {
+    fprintf(stderr, "ERROR: --out DIR is required (could not use ~/Documents/psarc/stems)\n");
     return 2;
   }
   if (app->queue.count == 0) {
@@ -157,13 +164,13 @@ int main(int argc, char **argv) {
     if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
       printf("%s %s\n", DMX_APP_NAME, DMX_APP_VERSION);
       printf("Usage: %s [options] [files...]\n", DMX_APP_USAGE);
-      printf("  --out DIR     Stem output directory (required for headless / file args)\n");
+      printf("  --out DIR     Stem output directory (default: ~/Documents/psarc/stems)\n");
       printf("  --mp3         Write MP3 stems (default)\n");
       printf("  --wav         Write WAV stems\n");
       printf("  --headless    No GUI (CI / machines without GPU display)\n");
       printf("  --version     Print version and exit\n");
       printf("\nWith input files, runs headless by default (no InitWindow).\n");
-      printf("GUI: add files anytime; pick Output folder, then press Start (no default path).\n");
+      printf("GUI: add files anytime; output defaults to Documents/psarc/stems if unset.\n");
       return 0;
     }
   }

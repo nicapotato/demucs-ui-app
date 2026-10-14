@@ -14,13 +14,13 @@ BUILD_PLATFORM ?= all
 .PHONY: run run-c run-py process process-c process-py build \
 	bundle bundle-mlx-c bundle-mlx-py bundle-py \
 	verify-mp3 verify-psarc models models-py \
-	worker worker-c worker-py worker-fetch-c worker-fetch-py \
+	worker worker-c worker-py worker-fetch-c worker-fetch-py worker-fetch-cuda \
 	clean ci ci-watch release release-watch
 
 run run-c run-py process process-c process-py build \
 bundle bundle-mlx-c bundle-mlx-py bundle-py \
 verify-mp3 verify-psarc models models-py \
-worker worker-c worker-py worker-fetch-c worker-fetch-py clean:
+worker worker-c worker-py worker-fetch-c worker-fetch-py worker-fetch-cuda clean:
 	$(MAKE) -C app $@
 
 ci:
