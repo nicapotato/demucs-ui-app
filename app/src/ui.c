@@ -406,6 +406,16 @@ static int begin_dialog(DmxApp *app, DmxDlgKind kind) {
         snprintf(g_dlg.start_dir, sizeof g_dlg.start_dir, "%s", def);
       }
     }
+  } else {
+    char rs[DMX_PATH_MAX];
+    if (dmx_prefs_rocksmith_dir(rs, sizeof rs) == 0) {
+      /* tinyfd drops the last path component of the default; keep the root with a trailing separator. */
+#ifdef _WIN32
+      snprintf(g_dlg.start_dir, sizeof g_dlg.start_dir, "%s\\", rs);
+#else
+      snprintf(g_dlg.start_dir, sizeof g_dlg.start_dir, "%s/", rs);
+#endif
+    }
   }
 
   void *(*fn)(void *) = (kind == DMX_DLG_FILES) ? dlg_files_thread : dlg_folder_thread;

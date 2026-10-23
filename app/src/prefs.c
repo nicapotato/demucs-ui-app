@@ -164,6 +164,36 @@ int dmx_prefs_default_output_dir(char *out, size_t out_sz) {
   return 0;
 }
 
+int dmx_prefs_rocksmith_dir(char *out, size_t out_sz) {
+  if (!out || out_sz == 0) {
+    return -1;
+  }
+  out[0] = '\0';
+#ifdef _WIN32
+  const char *vars[] = {"ProgramFiles(x86)", "ProgramFiles", NULL};
+  for (int i = 0; vars[i]; i++) {
+    const char *base = getenv(vars[i]);
+    if (!base || !base[0]) {
+      continue;
+    }
+    int n = snprintf(out, out_sz, "%s\\Steam\\steamapps\\common\\Rocksmith2014", base);
+    if (n > 0 && (size_t)n < out_sz && path_is_dir(out)) {
+      return 0;
+    }
+  }
+#else
+  const char *home = getenv("HOME");
+  if (home && home[0]) {
+    int n = snprintf(out, out_sz, "%s/Library/Application Support/Steam/steamapps/common/Rocksmith2014", home);
+    if (n > 0 && (size_t)n < out_sz && path_is_dir(out)) {
+      return 0;
+    }
+  }
+#endif
+  out[0] = '\0';
+  return -1;
+}
+
 int dmx_prefs_load_output_dir(char *out, size_t out_sz) {
   if (!out || out_sz == 0) {
     return -1;

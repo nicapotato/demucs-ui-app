@@ -17,6 +17,12 @@ int dmx_prefs_load_output_dir(char *out, size_t out_sz);
  * Creates the directory if missing. */
 int dmx_prefs_default_output_dir(char *out, size_t out_sz);
 
+/* Steam Rocksmith2014 game root (not its dlc/ subfolder) when installed:
+ *   macOS:  ~/Library/Application Support/Steam/steamapps/common/Rocksmith2014
+ *   Windows: %ProgramFiles(x86)%\Steam\steamapps\common\Rocksmith2014
+ * Returns 0 when the folder exists. */
+int dmx_prefs_rocksmith_dir(char *out, size_t out_sz);
+
 /* Persist output dir. Returns 0 on success. */
 int dmx_prefs_save_output_dir(const char *dir);
 
