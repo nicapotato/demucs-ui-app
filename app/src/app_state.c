@@ -122,12 +122,16 @@ void dmx_app_init(DmxApp *app) {
              "Add files, pick an output folder, then press Start");
   }
 
-  /* Restore last output folder if it still exists on disk. */
+  /* Last picked folder, else the shared Rock N Roller stems root. */
   char saved[DMX_PATH_MAX];
   if (dmx_prefs_load_output_dir(saved, sizeof saved) == 0) {
     snprintf(app->output_dir, sizeof app->output_dir, "%s", saved);
     app->output_dir_accepted = 1;
     snprintf(app->status_line, sizeof app->status_line, "Output restored -> %s", saved);
+  } else if (dmx_prefs_default_output_dir(saved, sizeof saved) == 0) {
+    snprintf(app->output_dir, sizeof app->output_dir, "%s", saved);
+    app->output_dir_accepted = 1;
+    snprintf(app->status_line, sizeof app->status_line, "Output -> %s", saved);
   }
 
   dmx_app_apply_settings(app);

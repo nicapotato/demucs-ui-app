@@ -13,10 +13,12 @@
 #endif
 #endif
 
+#ifndef DMX_PREFS_DIR_NAME
 #ifdef _WIN32
-#define DMX_PREFS_DIR_NAME "demucs-cuda-windows"
+#define DMX_PREFS_DIR_NAME "demucs-torch-windows"
 #else
-#define DMX_PREFS_DIR_NAME "demucs-mlx-arm-mac-silicon"
+#define DMX_PREFS_DIR_NAME "demucs-mlx-c-arm-mac-silicon"
+#endif
 #endif
 #define DMX_PREFS_FILE_NAME "prefs.conf"
 #define DMX_PREFS_KEY "OUTPUT_DIR="
@@ -82,6 +84,114 @@ static int path_is_dir(const char *path) {
     return 0;
   }
   return S_ISDIR(st.st_mode) ? 1 : 0;
+}
+
+static int mkdir_p(const char *path) {
+  char buf[2048];
+  if (!path || !path[0]) {
+    return -1;
+  }
+  snprintf(buf, sizeof buf, "%s", path);
+  size_t n = strlen(buf);
+  while (n > 1 && (buf[n - 1] == '/' || buf[n - 1] == '\\')) {
+    buf[--n] = '\0';
+  }
+  for (char *p = buf + 1; *p; ++p) {
+    if (*p != '/' && *p != '\\') {
+      continue;
+    }
+    char save = *p;
+    *p = '\0';
+#ifdef _WIN32
+    if (!(buf[0] && buf[1] == ':' && buf[2] == '\0')) {
+      if (_mkdir(buf) != 0 && errno != EEXIST) {
+        *p = save;
+        return -1;
+      }
+    }
+#else
+    if (mkdir(buf, 0755) != 0 && errno != EEXIST) {
+      *p = save;
+      return -1;
+    }
+#endif
+    *p = save;
+  }
+#ifdef _WIN32
+  if (_mkdir(buf) != 0 && errno != EEXIST) {
+    return -1;
+  }
+#else
+  if (mkdir(buf, 0755) != 0 && errno != EEXIST) {
+    return -1;
+  }
+#endif
+  return 0;
+}
+
+int dmx_prefs_default_output_dir(char *out, size_t out_sz) {
+  if (!out || out_sz == 0) {
+    return -1;
+  }
+  out[0] = '\0';
+#ifdef _WIN32
+  const char *home = getenv("USERPROFILE");
+  if (!home || !home[0]) {
+    home = getenv("HOME");
+  }
+  if (!home || !home[0]) {
+    return -1;
+  }
+  int n = snprintf(out, out_sz, "%s\\Documents\\psarc\\stems", home);
+#else
+  const char *home = getenv("HOME");
+  if (!home || !home[0]) {
+    return -1;
+  }
+  int n = snprintf(out, out_sz, "%s/Documents/psarc/stems", home);
+#endif
+  if (n < 0 || (size_t)n >= out_sz) {
+    out[0] = '\0';
+    return -1;
+  }
+  if (path_is_dir(out)) {
+    return 0;
+  }
+  if (mkdir_p(out) != 0 || !path_is_dir(out)) {
+    out[0] = '\0';
+    return -1;
+  }
+  return 0;
+}
+
+int dmx_prefs_rocksmith_dir(char *out, size_t out_sz) {
+  if (!out || out_sz == 0) {
+    return -1;
+  }
+  out[0] = '\0';
+#ifdef _WIN32
+  const char *vars[] = {"ProgramFiles(x86)", "ProgramFiles", NULL};
+  for (int i = 0; vars[i]; i++) {
+    const char *base = getenv(vars[i]);
+    if (!base || !base[0]) {
+      continue;
+    }
+    int n = snprintf(out, out_sz, "%s\\Steam\\steamapps\\common\\Rocksmith2014", base);
+    if (n > 0 && (size_t)n < out_sz && path_is_dir(out)) {
+      return 0;
+    }
+  }
+#else
+  const char *home = getenv("HOME");
+  if (home && home[0]) {
+    int n = snprintf(out, out_sz, "%s/Library/Application Support/Steam/steamapps/common/Rocksmith2014", home);
+    if (n > 0 && (size_t)n < out_sz && path_is_dir(out)) {
+      return 0;
+    }
+  }
+#endif
+  out[0] = '\0';
+  return -1;
 }
 
 int dmx_prefs_load_output_dir(char *out, size_t out_sz) {

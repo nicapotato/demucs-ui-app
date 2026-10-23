@@ -107,6 +107,7 @@ int dmx_worker_run_job(const DmxWorkerConfig *cfg, DmxJob *job, DmxWorkerLive *l
   SetHandleInformation(read_pipe, HANDLE_FLAG_INHERIT, 0);
 
   if (cfg->model_cache_dir[0]) {
+    SetEnvironmentVariableA("DEMUCS_CUDA_CACHE", cfg->model_cache_dir);
     SetEnvironmentVariableA("DEMUCS_TORCH_CACHE", cfg->model_cache_dir);
     SetEnvironmentVariableA("DEMUCS_MLX_CACHE", cfg->model_cache_dir);
     char torch_home[DMX_PATH_MAX];

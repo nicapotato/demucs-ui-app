@@ -1,0 +1,36 @@
+<p>Application that can take mp3, wav, or PSARC (Rocksmith 2014 CDLC) and extract mp3 or wav stems (isolated tracks for drums, guitar, bass, vocals, piano) using Demucs (6-stem <code>htdemucs_6s</code>).</p>
+
+<p>Download the build that matches your machine.</p>
+
+<h1>macOS Apple Silicon — MLX C (~124 MB)</h1>
+
+<p><code>demucs-mlx-c-arm-mac-silicon.zip</code></p>
+
+<p>Native C worker on MLX + Metal. No PyTorch. Small download, unified memory.</p>
+
+<h1>macOS Apple Silicon — MLX Python (~144 MB)</h1>
+
+<p><code>demucs-mlx-py-arm-mac-silicon.zip</code></p>
+
+<p>Frozen <a href="https://github.com/ssmall256/demucs-mlx/">demucs-mlx</a> worker (MLX + Metal). No PyTorch. Typically far faster than realtime (about 73× on an M4 Max for 4-stem <code>htdemucs</code>).</p>
+
+<h1>Windows x64 — PyTorch (~2 GB)</h1>
+
+<p><code>demucs-torch-windows.zip</code></p>
+
+<p>Official Meta Demucs + PyTorch. The zip is large because it includes the CUDA runtime — you only need a recent NVIDIA driver, not a CUDA toolkit. NVIDIA GPU recommended (about 5–7 GB VRAM for the default 6-stem model). CPU works but is slow (a 4-minute track can take about a minute). AMD and Intel GPUs fall back to CPU.</p>
+
+<p>Default model is Demucs <code>htdemucs_6s</code>. Output is MP3 or WAV in a RocknRoller-compatible folder layout so you can mute the chart guitar and play over the rest of the band.</p>
+
+<p><strong>Repos:</strong></p>
+
+<ul>
+  <li>App: <a href="https://github.com/nicapotato/demucs-ui-app">https://github.com/nicapotato/demucs-ui-app</a></li>
+  <li>macOS workers: <a href="https://github.com/nicapotato/demucs-mac-silicon">https://github.com/nicapotato/demucs-mac-silicon</a></li>
+  <li>Windows PyTorch worker: <a href="https://github.com/nicapotato/demucs-windows">https://github.com/nicapotato/demucs-windows</a></li>
+  <li>Original MLX port (MLX Python build): <a href="https://github.com/ssmall256/demucs-mlx/">https://github.com/ssmall256/demucs-mlx/</a></li>
+</ul>
+
+<p>Pairs with <a href="https://nicapotato.itch.io/rocknroller">RocknRoller</a>.</p>
+
+<p>NICAPOTATO Discord Community: <a href="https://discord.gg/7djjRNECz">https://discord.gg/7djjRNECz</a></p>

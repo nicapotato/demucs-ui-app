@@ -55,6 +55,7 @@ int dmx_worker_run_job(const DmxWorkerConfig *cfg, DmxJob *job, DmxWorkerLive *l
     close(pipefd[1]);
 
     if (cfg->model_cache_dir[0]) {
+      setenv("DEMUCS_CUDA_CACHE", cfg->model_cache_dir, 1);
       setenv("DEMUCS_MLX_CACHE", cfg->model_cache_dir, 1);
       setenv("DEMUCS_TORCH_CACHE", cfg->model_cache_dir, 1);
     }

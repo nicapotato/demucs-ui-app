@@ -1,6 +1,7 @@
 #include "ui.h"
 
 #include "platform/threads.h"
+#include "prefs.h"
 #include "tinyfiledialogs.h"
 #include "ui_theme.h"
 
@@ -400,10 +401,20 @@ static int begin_dialog(DmxApp *app, DmxDlgKind kind) {
     if (app->output_dir[0]) {
       snprintf(g_dlg.start_dir, sizeof g_dlg.start_dir, "%s", app->output_dir);
     } else {
-      const char *home = getenv("HOME");
-      if (home && home[0]) {
-        snprintf(g_dlg.start_dir, sizeof g_dlg.start_dir, "%s", home);
+      char def[DMX_PATH_MAX];
+      if (dmx_prefs_default_output_dir(def, sizeof def) == 0) {
+        snprintf(g_dlg.start_dir, sizeof g_dlg.start_dir, "%s", def);
       }
+    }
+  } else {
+    char rs[DMX_PATH_MAX];
+    if (dmx_prefs_rocksmith_dir(rs, sizeof rs) == 0) {
+      /* tinyfd drops the last path component of the default; keep the root with a trailing separator. */
+#ifdef _WIN32
+      snprintf(g_dlg.start_dir, sizeof g_dlg.start_dir, "%s\\", rs);
+#else
+      snprintf(g_dlg.start_dir, sizeof g_dlg.start_dir, "%s/", rs);
+#endif
     }
   }
 
