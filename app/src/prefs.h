@@ -26,4 +26,8 @@ int dmx_prefs_rocksmith_dir(char *out, size_t out_sz);
 /* Persist output dir. Returns 0 on success. */
 int dmx_prefs_save_output_dir(const char *dir);
 
+/* ONNX stems device choice (STEMS_DEVICE=gpu|cpu). Load returns 0 when saved. */
+int dmx_prefs_load_use_cpu(int *out);
+int dmx_prefs_save_use_cpu(int use_cpu);
+
 #endif

@@ -87,6 +87,11 @@ int dmx_worker_run_job(const DmxWorkerConfig *cfg, DmxJob *job, DmxWorkerLive *l
     if (cfg->write_mp3) {
       argv[a++] = "--mp3";
     }
+    const char *device = dmx_worker_device_arg(cfg);
+    if (device) {
+      argv[a++] = "--device";
+      argv[a++] = (char *)device;
+    }
     argv[a] = NULL;
 
     execv(cfg->python_or_worker, argv);

@@ -49,6 +49,10 @@ static int parse_cli(int argc, char **argv, DmxApp *app, int *out_file_args, int
       force_headless = 1;
       continue;
     }
+    if (strcmp(argv[i], "--cpu") == 0 || strcmp(argv[i], "--gpu") == 0) {
+      app->use_cpu = argv[i][2] == 'c';
+      continue;
+    }
     if (argv[i][0] == '-') {
       fprintf(stderr, "Unknown option: %s\n", argv[i]);
       return -1;
@@ -63,7 +67,7 @@ static int parse_cli(int argc, char **argv, DmxApp *app, int *out_file_args, int
       continue;
     }
     if (strcmp(argv[i], "--wav") == 0 || strcmp(argv[i], "--mp3") == 0 ||
-        strcmp(argv[i], "--headless") == 0) {
+        strcmp(argv[i], "--headless") == 0 || strcmp(argv[i], "--cpu") == 0 || strcmp(argv[i], "--gpu") == 0) {
       continue;
     }
     if (argv[i][0] == '-') {
@@ -142,6 +146,10 @@ static int run_headless(DmxApp *app) {
       }
     }
 
+    if (!app->worker_thread && app->queue.active_slot < 0 && !app->processing_enabled) {
+      fprintf(stderr, "ERROR: %s\n", app->status_line);
+      return 1;
+    }
     if (!app->worker_thread && app->queue.active_slot < 0) {
       int failed = 0;
       if (!jobs_pending_or_failed(app, &failed)) {
@@ -173,6 +181,8 @@ int main(int argc, char **argv) {
       printf("  --mp3         Write MP3 stems (default)\n");
       printf("  --wav         Write WAV stems\n");
       printf("  --headless    No GUI (CI / machines without GPU display)\n");
+      printf("  --gpu, --cpu  ONNX builds: run stems on the GPU (errors if it fails) or the CPU\n");
+      printf("                (default: the Device choice saved by the GUI, else GPU)\n");
       printf("  --version     Print version and exit\n");
       printf("\nWith input files, runs headless by default (no InitWindow).\n");
       printf("GUI: add files anytime; output defaults to Documents/psarc/stems if unset.\n");

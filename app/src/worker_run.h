@@ -14,6 +14,7 @@ typedef struct {
   char model_cache_dir[DMX_PATH_MAX];
   int write_mp3;
   int batch_size;
+  int use_cpu; /* ONNX: 1 = --device cpu, 0 = --device gpu (a GPU failure is a job error) */
 } DmxWorkerConfig;
 
 typedef struct {
@@ -26,6 +27,7 @@ typedef struct {
   char device[16]; /* "cuda" / "dml" / "cpu" from worker status JSON; empty until known */
   char gpu[128];   /* adapter name from the ONNX worker ("NVIDIA GeForce RTX 3080"); empty on CPU */
   int gpu_failed;  /* ONNX worker fell back to CPU after a GPU inference error */
+  int gpu_error;   /* ONNX --device gpu run failed on the GPU (error kind "gpu_failed") */
   int exit_code;
   int pid;
   void *os_handle; /* Windows process HANDLE; unused on POSIX */
@@ -45,6 +47,12 @@ int dmx_worker_is_cuda_c(const DmxWorkerConfig *cfg);
 
 /* demucs-onnx worker: frozen demucs_onnx_worker or python -m demucs_onnx_worker. */
 int dmx_worker_is_onnx(const DmxWorkerConfig *cfg);
+
+/* ONNX build that can run on a GPU (not macOS): the GPU / CPU toggle applies. */
+int dmx_worker_gpu_selectable(const DmxWorkerConfig *cfg);
+
+/* Value for the ONNX worker's --device ("gpu" / "cpu"); NULL for other workers. */
+const char *dmx_worker_device_arg(const DmxWorkerConfig *cfg);
 
 /* Either native worker: no python -m. */
 int dmx_worker_is_native(const DmxWorkerConfig *cfg);

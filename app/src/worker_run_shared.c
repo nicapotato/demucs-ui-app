@@ -245,6 +245,25 @@ static const char *worker_basename(const DmxWorkerConfig *cfg) {
   return base;
 }
 
+int dmx_worker_gpu_selectable(const DmxWorkerConfig *cfg) {
+#ifdef __APPLE__
+  (void)cfg;
+  return 0;
+#else
+  return dmx_worker_is_onnx(cfg);
+#endif
+}
+
+const char *dmx_worker_device_arg(const DmxWorkerConfig *cfg) {
+  if (!dmx_worker_is_onnx(cfg)) {
+    return NULL;
+  }
+  if (!dmx_worker_gpu_selectable(cfg)) {
+    return "cpu";
+  }
+  return cfg->use_cpu ? "cpu" : "gpu";
+}
+
 int dmx_worker_is_onnx(const DmxWorkerConfig *cfg) {
   if (!cfg || !cfg->python_or_worker[0]) {
     return 0;
@@ -634,6 +653,11 @@ void dmx_worker_handle_json_line(DmxWorkerLive *live, const char *line) {
   } else if (strstr(line, "\"error\"")) {
     char tmp[DMX_MSG_MAX];
     copy_json_string(line, "\"message\"", tmp, sizeof tmp);
+    char kind[32];
+    copy_json_string(line, "\"kind\"", kind, sizeof kind);
+    if (strcmp(kind, "gpu_failed") == 0) {
+      live->gpu_error = 1;
+    }
     if (tmp[0]) {
       dmx_worker_set_msg(live->error_msg, sizeof live->error_msg, tmp);
       fprintf(stderr, "dmx_worker: error: %s\n", tmp);

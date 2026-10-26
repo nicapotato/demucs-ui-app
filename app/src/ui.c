@@ -75,6 +75,7 @@ typedef struct {
   Rectangle add_btn;
   Rectangle out_btn;
   Rectangle fmt_btn;
+  Rectangle dev_btn; /* zero-size unless the ONNX GPU / CPU toggle applies */
   Rectangle start_stop_btn;
   Rectangle info;
   Rectangle out_field;
@@ -189,11 +190,20 @@ static void fill_info_rows(const DmxApp *app, DmxUiLayout *L) {
     r->col = DMX_COL_TEXT_FAINT;
   }
 
-  if (app->device[0]) {
+  if (app->gpu_error) {
+    r = &L->rows[L->n_rows++];
+    r->label = "DEVICE";
+    snprintf(r->value, sizeof r->value, "GPU failed%s%s - switch Device to CPU to run on the CPU (see console)",
+             app->gpu[0] ? " on " : "", app->gpu);
+    r->col = DMX_COL_ACCENT_RED;
+  } else if (app->device[0]) {
     r = &L->rows[L->n_rows++];
     r->label = "DEVICE";
     if (app->gpu_failed) {
       snprintf(r->value, sizeof r->value, "CPU (GPU inference failed - see console; running slower on CPU)");
+      r->col = DMX_COL_ACCENT_ORANGE;
+    } else if (strcmp(app->device, "cpu") == 0 && dmx_worker_gpu_selectable(cfg) && app->use_cpu) {
+      snprintf(r->value, sizeof r->value, "CPU (selected - switch Device to GPU for speed)");
       r->col = DMX_COL_ACCENT_ORANGE;
     } else if (strcmp(app->device, "cpu") == 0) {
 #if defined(TARGET_CPU_ARM64) && TARGET_CPU_ARM64
@@ -215,6 +225,7 @@ static void fill_info_rows(const DmxApp *app, DmxUiLayout *L) {
 }
 
 static const char *fmt_label(const DmxApp *app) { return app->write_mp3 ? "Format: MP3" : "Format: WAV"; }
+static const char *dev_label(const DmxApp *app) { return app->use_cpu ? "Device: CPU" : "Device: GPU"; }
 
 static DmxUiLayout dmx_ui_layout(const DmxApp *app, int screen_w, int screen_h) {
   DmxUiLayout L;
@@ -244,13 +255,16 @@ static DmxUiLayout dmx_ui_layout(const DmxApp *app, int screen_w, int screen_h) 
     float w_add = (float)MeasureText("Add files...", DMX_UI_BTN_FS) + 36.0f;
     float w_out = (float)MeasureText("Output folder...", DMX_UI_BTN_FS) + 36.0f;
     float w_fmt = (float)MeasureText("Format: MP3", DMX_UI_BTN_FS) + 36.0f;
-    float avail = right - m - ss_w - DMX_UI_GAP * 3.0f;
-    float natural = w_add + w_out + w_fmt;
+    const int has_dev = dmx_worker_gpu_selectable(&app->worker_cfg);
+    float w_dev = has_dev ? (float)MeasureText("Device: GPU", DMX_UI_BTN_FS) + 36.0f : 0.0f;
+    float avail = right - m - ss_w - DMX_UI_GAP * (has_dev ? 4.0f : 3.0f);
+    float natural = w_add + w_out + w_fmt + w_dev;
     if (natural > avail && avail > 0.0f) {
       float k = avail / natural;
       w_add *= k;
       w_out *= k;
       w_fmt *= k;
+      w_dev *= k;
     }
     float x = m;
     L.add_btn = (Rectangle){x, y, w_add, DMX_UI_BTN_H};
@@ -258,6 +272,8 @@ static DmxUiLayout dmx_ui_layout(const DmxApp *app, int screen_w, int screen_h) 
     L.out_btn = (Rectangle){x, y, w_out, DMX_UI_BTN_H};
     x += w_out + DMX_UI_GAP;
     L.fmt_btn = (Rectangle){x, y, w_fmt, DMX_UI_BTN_H};
+    x += w_fmt + DMX_UI_GAP;
+    L.dev_btn = (Rectangle){x, y, w_dev, has_dev ? DMX_UI_BTN_H : 0.0f};
     L.start_stop_btn = (Rectangle){right - ss_w, y, ss_w, DMX_UI_BTN_H};
   }
   y += DMX_UI_BTN_H + DMX_UI_GAP;
@@ -802,6 +818,10 @@ void dmx_ui_draw(DmxApp *app, int screen_w, int screen_h) {
   any_hover |= dmx_ui_draw_btn(L.add_btn, "Add files...", DMX_UI_BTN_FS, true, !busy, DMX_COL_ACCENT_BLUE);
   any_hover |= dmx_ui_draw_btn(L.out_btn, "Output folder...", DMX_UI_BTN_FS, !out_ok, !busy, DMX_COL_ACCENT_YELLOW);
   any_hover |= dmx_ui_draw_btn(L.fmt_btn, fmt_label(app), DMX_UI_BTN_FS, false, 1, DMX_COL_HILIGHT);
+  if (L.dev_btn.width > 0.0f) {
+    any_hover |= dmx_ui_draw_btn(L.dev_btn, dev_label(app), DMX_UI_BTN_FS, app->gpu_error, 1,
+                                 app->gpu_error ? DMX_COL_ACCENT_RED : DMX_COL_HILIGHT);
+  }
   if (app->processing_enabled) {
     any_hover |= dmx_ui_draw_btn(L.start_stop_btn, "Stop", DMX_UI_BTN_FS, true, 1, DMX_COL_ACCENT_RED);
   } else {
@@ -862,6 +882,10 @@ int dmx_ui_handle_click(DmxApp *app, int x, int y, int screen_w, int screen_h) {
   if (point_in(x, y, L.fmt_btn)) {
     app->write_mp3 = !app->write_mp3;
     dmx_app_apply_settings(app);
+    return 1;
+  }
+  if (L.dev_btn.width > 0.0f && point_in(x, y, L.dev_btn)) {
+    dmx_app_set_use_cpu(app, !app->use_cpu);
     return 1;
   }
   if (point_in(x, y, L.body)) {

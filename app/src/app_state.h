@@ -18,6 +18,8 @@ typedef struct {
   int processing_enabled;  /* 1 = Start pressed; dequeue jobs when idle */
   char status_line[DMX_MSG_MAX];
   int write_mp3;
+  int use_cpu;   /* ONNX GPU / CPU toggle, saved in prefs */
+  int gpu_error; /* last ONNX job failed on the GPU; cleared when the toggle changes */
   int cancel_pressed;
   /* Last device the worker reported. `live` is reset per job; these persist for the UI. */
   char device[16];
@@ -40,6 +42,8 @@ void dmx_app_move_job(DmxApp *app, int row, int delta);
 /* Drop a row. An in-progress job is cancelled first, then removed. */
 void dmx_app_remove_job(DmxApp *app, int row);
 void dmx_app_apply_settings(DmxApp *app);
+/* Pick GPU (0) or CPU (1) for the ONNX worker; saved for the next launch. */
+void dmx_app_set_use_cpu(DmxApp *app, int use_cpu);
 /* Load wordmark + set window icon after InitWindow / SearchAndSetResourceDir. */
 void dmx_app_load_branding(DmxApp *app);
 

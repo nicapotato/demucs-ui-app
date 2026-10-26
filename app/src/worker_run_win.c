@@ -161,6 +161,11 @@ int dmx_worker_run_job(const DmxWorkerConfig *cfg, DmxJob *job, DmxWorkerLive *l
   if (cfg->write_mp3) {
     append_quoted(cmd, sizeof cmd, "--mp3");
   }
+  const char *device = dmx_worker_device_arg(cfg);
+  if (device) {
+    append_quoted(cmd, sizeof cmd, "--device");
+    append_quoted(cmd, sizeof cmd, device);
+  }
 
   wchar_t *wcmd = utf8_to_wide(cmd);
   if (!wcmd) {

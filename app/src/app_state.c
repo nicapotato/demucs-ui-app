@@ -174,6 +174,11 @@ void dmx_app_init(DmxApp *app) {
     snprintf(app->status_line, sizeof app->status_line, "Output -> %s", saved);
   }
 
+  int use_cpu = 0;
+  if (dmx_prefs_load_use_cpu(&use_cpu) == 0) {
+    app->use_cpu = use_cpu;
+  }
+
   dmx_app_apply_settings(app);
 }
 
@@ -225,7 +230,23 @@ void dmx_app_shutdown(DmxApp *app) {
   }
 }
 
-void dmx_app_apply_settings(DmxApp *app) { app->worker_cfg.write_mp3 = app->write_mp3; }
+void dmx_app_apply_settings(DmxApp *app) {
+  app->worker_cfg.write_mp3 = app->write_mp3;
+  app->worker_cfg.use_cpu = app->use_cpu;
+}
+
+void dmx_app_set_use_cpu(DmxApp *app, int use_cpu) {
+  app->use_cpu = use_cpu ? 1 : 0;
+  app->gpu_error = 0;
+  dmx_app_apply_settings(app);
+  const char *which = app->use_cpu ? "CPU" : "GPU";
+  if (dmx_prefs_save_use_cpu(app->use_cpu) != 0) {
+    snprintf(app->status_line, sizeof app->status_line, "Device: %s for the next job (could not save prefs)",
+             which);
+  } else {
+    snprintf(app->status_line, sizeof app->status_line, "Device: %s for the next job", which);
+  }
+}
 
 void dmx_app_set_output_dir(DmxApp *app, const char *dir) {
   if (!app || !dir || !dir[0]) {
@@ -529,6 +550,17 @@ void dmx_app_tick(DmxApp *app) {
     app->worker_thread = NULL;
     app->queue.active_slot = -1;
     app->cancel_pressed = 0;
+    if (app->live.gpu_error) {
+      /* Every queued job would hit the same GPU failure. The user picks CPU and restarts. */
+      app->gpu_error = 1;
+      app->processing_enabled = 0;
+      snprintf(app->status_line, sizeof app->status_line,
+               "GPU failed - stopped. Switch Device to CPU and press Start to run on the CPU.");
+      fprintf(stderr, "demucs: GPU failed; queue stopped. Switch Device to CPU to run on the CPU.\n");
+      fflush(stderr);
+    } else if (app->live.exit_code == 0) {
+      app->gpu_error = 0;
+    }
     dmx_worker_live_reset(&app->live);
     if (drop) {
       dmx_queue_drop_slot(&app->queue, slot);

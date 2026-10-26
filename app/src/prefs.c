@@ -22,6 +22,7 @@
 #endif
 #define DMX_PREFS_FILE_NAME "prefs.conf"
 #define DMX_PREFS_KEY "OUTPUT_DIR="
+#define DMX_PREFS_DEVICE_KEY "STEMS_DEVICE="
 
 static int prefs_dir(char *out, size_t out_sz) {
   if (!out || out_sz < 8) {
@@ -194,7 +195,8 @@ int dmx_prefs_rocksmith_dir(char *out, size_t out_sz) {
   return -1;
 }
 
-int dmx_prefs_load_output_dir(char *out, size_t out_sz) {
+/* Value of "KEY=" (key includes the '='). Returns 0 when found and non-empty. */
+static int prefs_get(const char *key, char *out, size_t out_sz) {
   if (!out || out_sz == 0) {
     return -1;
   }
@@ -213,10 +215,10 @@ int dmx_prefs_load_output_dir(char *out, size_t out_sz) {
   char line[2048];
   int found = 0;
   while (fgets(line, sizeof line, f)) {
-    if (strncmp(line, DMX_PREFS_KEY, strlen(DMX_PREFS_KEY)) != 0) {
+    if (strncmp(line, key, strlen(key)) != 0) {
       continue;
     }
-    char *v = line + strlen(DMX_PREFS_KEY);
+    char *v = line + strlen(key);
     while (*v == ' ' || *v == '\t') {
       ++v;
     }
@@ -232,18 +234,11 @@ int dmx_prefs_load_output_dir(char *out, size_t out_sz) {
     break;
   }
   fclose(f);
-
-  if (!found || !path_is_dir(out)) {
-    out[0] = '\0';
-    return -1;
-  }
-  return 0;
+  return found ? 0 : -1;
 }
 
-int dmx_prefs_save_output_dir(const char *dir) {
-  if (!dir || !dir[0]) {
-    return -1;
-  }
+/* Set "KEY=value", keeping every other line of prefs.conf. */
+static int prefs_set(const char *key, const char *value) {
   if (ensure_prefs_dir() != 0) {
     return -1;
   }
@@ -253,11 +248,66 @@ int dmx_prefs_save_output_dir(const char *dir) {
     return -1;
   }
 
-  FILE *f = fopen(path, "w");
+  char keep[8192];
+  size_t used = 0;
+  keep[0] = '\0';
+  FILE *f = fopen(path, "r");
+  if (f) {
+    char line[2048];
+    while (fgets(line, sizeof line, f)) {
+      size_t n = strlen(line);
+      if (strncmp(line, key, strlen(key)) == 0 || n == 0 || used + n + 2 >= sizeof keep) {
+        continue;
+      }
+      memcpy(keep + used, line, n + 1);
+      used += n;
+      if (keep[used - 1] != '\n') {
+        keep[used++] = '\n';
+        keep[used] = '\0';
+      }
+    }
+    fclose(f);
+  }
+
+  f = fopen(path, "w");
   if (!f) {
     return -1;
   }
-  fprintf(f, "%s%s\n", DMX_PREFS_KEY, dir);
+  fprintf(f, "%s%s%s\n", keep, key, value);
   fclose(f);
   return 0;
 }
+
+int dmx_prefs_load_output_dir(char *out, size_t out_sz) {
+  if (prefs_get(DMX_PREFS_KEY, out, out_sz) != 0 || !path_is_dir(out)) {
+    if (out && out_sz) {
+      out[0] = '\0';
+    }
+    return -1;
+  }
+  return 0;
+}
+
+int dmx_prefs_save_output_dir(const char *dir) {
+  if (!dir || !dir[0]) {
+    return -1;
+  }
+  return prefs_set(DMX_PREFS_KEY, dir);
+}
+
+int dmx_prefs_load_use_cpu(int *out) {
+  char v[16];
+  if (!out || prefs_get(DMX_PREFS_DEVICE_KEY, v, sizeof v) != 0) {
+    return -1;
+  }
+  if (strcmp(v, "cpu") == 0) {
+    *out = 1;
+  } else if (strcmp(v, "gpu") == 0) {
+    *out = 0;
+  } else {
+    return -1;
+  }
+  return 0;
+}
+
+int dmx_prefs_save_use_cpu(int use_cpu) { return prefs_set(DMX_PREFS_DEVICE_KEY, use_cpu ? "cpu" : "gpu"); }
