@@ -82,7 +82,8 @@ static int jobs_pending_or_failed(const DmxApp *app, int *out_failed) {
   int pending = 0;
   int failed = 0;
   for (int i = 0; i < app->queue.count; ++i) {
-    DmxJobStatus st = app->queue.jobs[i].status;
+    const DmxJob *job = dmx_queue_at(&app->queue, i);
+    DmxJobStatus st = job ? job->status : DMX_JOB_ERROR;
     if (st == DMX_JOB_QUEUED || st == DMX_JOB_RUNNING || st == DMX_JOB_PREPARING) {
       pending = 1;
     }
@@ -131,8 +132,9 @@ static int run_headless(DmxApp *app) {
   for (;;) {
     dmx_app_tick(app);
 
-    if (app->queue.active_index >= 0 && app->queue.active_index < app->queue.count) {
-      const DmxJob *j = &app->queue.jobs[app->queue.active_index];
+    if (app->queue.active_slot >= 0 && app->queue.active_slot < DMX_JOB_MAX &&
+        app->queue.slot_used[app->queue.active_slot]) {
+      const DmxJob *j = &app->queue.jobs[app->queue.active_slot];
       if (j->message[0] && strcmp(j->message, last_status) != 0) {
         snprintf(last_status, sizeof last_status, "%s", j->message);
         printf("[%s] %.0f%% %s\n", j->track_name, (double)j->progress_pct, j->message);
@@ -140,11 +142,14 @@ static int run_headless(DmxApp *app) {
       }
     }
 
-    if (!app->worker_thread && app->queue.active_index < 0) {
+    if (!app->worker_thread && app->queue.active_slot < 0) {
       int failed = 0;
       if (!jobs_pending_or_failed(app, &failed)) {
         for (int i = 0; i < app->queue.count; ++i) {
-          const DmxJob *j = &app->queue.jobs[i];
+          const DmxJob *j = dmx_queue_at(&app->queue, i);
+          if (!j) {
+            continue;
+          }
           printf("done: %s -> %s\n", j->input_path, j->message);
         }
         return failed ? 1 : 0;

@@ -41,10 +41,13 @@ int dmx_worker_is_mlx_c(const DmxWorkerConfig *cfg);
 /* Native C/CUDA worker (demucs_cuda_worker.exe). */
 int dmx_worker_is_cuda_c(const DmxWorkerConfig *cfg);
 
+/* demucs-onnx worker: frozen demucs_onnx_worker or python -m demucs_onnx_worker. */
+int dmx_worker_is_onnx(const DmxWorkerConfig *cfg);
+
 /* Either native worker: no python -m. */
 int dmx_worker_is_native(const DmxWorkerConfig *cfg);
 
-/* Short backend id: "mlx-c", "mlx-py", "cuda-c" or "torch-py". */
+/* Short backend id: "mlx-c", "mlx-py", "cuda-c", "torch-py", or "onnx". */
 const char *dmx_worker_backend_label(const DmxWorkerConfig *cfg);
 /* One-line description of the backend, e.g. "native C + Metal". */
 const char *dmx_worker_backend_detail(const DmxWorkerConfig *cfg);

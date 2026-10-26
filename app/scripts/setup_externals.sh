@@ -21,6 +21,8 @@ case "$(uname -s 2>/dev/null || echo unknown)" in
   MINGW*|MSYS*|CYGWIN*) is_windows=1 ;;
 esac
 
+mach="$(uname -m 2>/dev/null || echo unknown)"
+os="$(uname -s 2>/dev/null || echo unknown)"
 if [[ "$is_windows" -eq 1 ]]; then
   if [[ ! -f "${EXT}/rocksmith-psarc-prebuilt/lib-windows-x64/rocksmith_psarc.lib" &&
         ! -f "${EXT}/rocksmith-psarc-src/CMakeLists.txt" &&
@@ -28,11 +30,18 @@ if [[ "$is_windows" -eq 1 ]]; then
     echo "ERROR: no Windows rocksmith-psarc prebuilt or source under ${EXT}" >&2
     exit 1
   fi
-else
+elif [[ "$os" == "Darwin" && "$mach" == "arm64" ]]; then
   if [[ ! -f "${EXT}/rocksmith-psarc-prebuilt/lib/librocksmith_psarc.a" ||
         ! -f "${EXT}/rocksmith-psarc-prebuilt/lib/libvgmstream.a" ]]; then
     echo "ERROR: missing prebuilt rocksmith-psarc under ${EXT}/rocksmith-psarc-prebuilt/lib" >&2
     echo "Refresh with: bash app/scripts/refresh_rocksmith_prebuilt.sh" >&2
+    exit 1
+  fi
+else
+  # Intel Mac and Linux: the checked-in archive is Mach-O arm64. CMake builds source.
+  if [[ ! -f "${EXT}/rocksmith-psarc-src/CMakeLists.txt" &&
+        ! -f "${EXT}/rocksmith-psarc/CMakeLists.txt" ]]; then
+    echo "ERROR: no rocksmith-psarc source under ${EXT} (needed on ${os} ${mach})" >&2
     exit 1
   fi
 fi

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Assemble a dedicated macOS .app for one worker flavor.
-# DMX_VARIANT=mlx-c (default) or mlx-py. DMX_WORKER_KIND=c|py is accepted as an alias.
+# DMX_VARIANT=mlx-c (default), mlx-py, or onnx.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -13,7 +13,7 @@ if [[ -z "$VARIANT" ]]; then
     py) VARIANT="mlx-py" ;;
     mlx-c|mlx-py) VARIANT="$DMX_WORKER_KIND" ;;
     *)
-      echo "DMX_VARIANT must be mlx-c or mlx-py (got '${DMX_WORKER_KIND:-}')" >&2
+      echo "DMX_VARIANT must be mlx-c, mlx-py, or onnx (got '${DMX_WORKER_KIND:-}')" >&2
       exit 1
       ;;
   esac
@@ -32,6 +32,7 @@ case "$VARIANT" in
     MODEL_FILES=(htdemucs_6s.safetensors htdemucs_6s.json)
     WORKER_HINT="make -C app worker-fetch-c"
     MODELS_HINT="make -C app worker-fetch-c"
+    WORKER_BIN="demucs_mlx_worker"
     ;;
   mlx-py|py)
     VARIANT="mlx-py"
@@ -45,9 +46,31 @@ case "$VARIANT" in
     MODEL_FILES=(htdemucs_6s.safetensors htdemucs_6s_config.json)
     WORKER_HINT="make -C app worker-fetch-py"
     MODELS_HINT="make -C app worker-fetch-py"
+    WORKER_BIN="demucs_mlx_worker"
+    ;;
+  onnx)
+    VARIANT="onnx"
+    WORKER_KIND="py"
+    APP_NAME="DemucsOnnxMac"
+    APP_DISPLAY="Demucs ONNX"
+    arch="$(uname -m)"
+    if [[ "$arch" == "arm64" || "$arch" == "aarch64" ]]; then
+      BUNDLE_ID="com.nicapotato.demucs-onnx-mac-arm64"
+      ZIP_NAME="demucs-onnx-mac-arm64.zip"
+      WORKER_HINT="make -C app worker-fetch-onnx ONNX_TARGET=mac-arm64"
+    else
+      BUNDLE_ID="com.nicapotato.demucs-onnx-mac-x64"
+      ZIP_NAME="demucs-onnx-mac-x64.zip"
+      WORKER_HINT="make -C app worker-fetch-onnx ONNX_TARGET=mac-x64"
+    fi
+    WORKER_DIR="$ROOT/dist/worker/demucs_onnx_worker"
+    WORKER_FILES=()
+    MODEL_FILES=(htdemucs_6s_fp16weights.onnx)
+    MODELS_HINT="$WORKER_HINT"
+    WORKER_BIN="demucs_onnx_worker"
     ;;
   *)
-    echo "DMX_VARIANT must be mlx-c or mlx-py (got '$VARIANT')" >&2
+    echo "DMX_VARIANT must be mlx-c, mlx-py, or onnx (got '$VARIANT')" >&2
     exit 1
     ;;
 esac
@@ -74,7 +97,7 @@ if [[ ! -x "$BIN" ]]; then
   echo "Build the GUI first: make -C app build DMX_VARIANT=${VARIANT}" >&2
   exit 1
 fi
-if [[ ! -f "$WORKER_DIR/demucs_mlx_worker" || ! -x "$WORKER_DIR/demucs_mlx_worker" ]]; then
+if [[ ! -f "$WORKER_DIR/$WORKER_BIN" || ! -x "$WORKER_DIR/$WORKER_BIN" ]]; then
   echo "Fetch or build the worker first: $WORKER_HINT" >&2
   exit 1
 fi

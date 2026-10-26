@@ -27,17 +27,29 @@ typedef struct {
   float progress_pct;
   char message[DMX_MSG_MAX];
   char out_dir[DMX_PATH_MAX];
+  int remove_when_done; /* drop this row after the worker thread finishes */
 } DmxJob;
 
 typedef struct {
   DmxJob jobs[DMX_JOB_MAX];
+  int slot_used[DMX_JOB_MAX];
+  int order[DMX_JOB_MAX]; /* display order; values are stable slot indexes */
   int count;
-  int active_index; /* -1 if idle */
+  int active_slot; /* stable slot of the running job, or -1 */
 } DmxJobQueue;
 
 void dmx_queue_init(DmxJobQueue *q);
 int dmx_queue_add(DmxJobQueue *q, const char *path);
-DmxJob *dmx_queue_next_queued(DmxJobQueue *q, int *out_index);
+/* Next DMX_JOB_QUEUED job in display order. *out_slot is the stable slot. */
+DmxJob *dmx_queue_next_queued(DmxJobQueue *q, int *out_slot);
+const DmxJob *dmx_queue_at(const DmxJobQueue *q, int row);
+DmxJob *dmx_queue_at_mut(DmxJobQueue *q, int row);
+int dmx_queue_active_row(const DmxJobQueue *q);
+/* Swap with the neighbor. delta is -1 or +1. Returns 0, or -1 if it cannot move. */
+int dmx_queue_move(DmxJobQueue *q, int row, int delta);
+/* 0 = removed now, 1 = active job marked to drop after cancel, -1 = bad row. */
+int dmx_queue_remove(DmxJobQueue *q, int row);
+void dmx_queue_drop_slot(DmxJobQueue *q, int slot);
 const char *dmx_job_status_label(DmxJobStatus s);
 
 #endif

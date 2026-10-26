@@ -83,16 +83,28 @@ void dmx_worker_apply_dev_pythonpath(const DmxWorkerConfig *cfg) {
 
   char pkg_mlx[DMX_PATH_MAX];
   char pkg_torch[DMX_PATH_MAX];
+  char pkg_onnx[DMX_PATH_MAX];
+  char py_root[DMX_PATH_MAX];
 #ifdef _WIN32
   snprintf(pkg_mlx, sizeof pkg_mlx, "%s\\demucs_mlx", root);
   snprintf(pkg_torch, sizeof pkg_torch, "%s\\demucs_torch", root);
+  snprintf(pkg_onnx, sizeof pkg_onnx, "%s\\src\\demucs_onnx_worker", root);
 #else
   snprintf(pkg_mlx, sizeof pkg_mlx, "%s/demucs_mlx", root);
   snprintf(pkg_torch, sizeof pkg_torch, "%s/demucs_torch", root);
+  snprintf(pkg_onnx, sizeof pkg_onnx, "%s/src/demucs_onnx_worker", root);
 #endif
-  if (!dmx_worker_file_exists(pkg_mlx) && !dmx_worker_file_exists(pkg_torch)) {
+  if (dmx_worker_file_exists(pkg_onnx)) {
+#ifdef _WIN32
+    snprintf(py_root, sizeof py_root, "%s\\src", root);
+#else
+    snprintf(py_root, sizeof py_root, "%s/src", root);
+#endif
+  } else if (dmx_worker_file_exists(pkg_mlx) || dmx_worker_file_exists(pkg_torch)) {
+    snprintf(py_root, sizeof py_root, "%s", root);
+  } else {
     fprintf(stderr,
-            "dmx_worker: %s has no demucs_mlx or demucs_torch source; PYTHONPATH not set\n",
+            "dmx_worker: %s has no demucs worker source; PYTHONPATH not set\n",
             root);
     return;
   }
@@ -102,12 +114,12 @@ void dmx_worker_apply_dev_pythonpath(const DmxWorkerConfig *cfg) {
   int wrote;
   if (old && old[0]) {
 #ifdef _WIN32
-    wrote = snprintf(combined, sizeof combined, "%s;%s", root, old);
+    wrote = snprintf(combined, sizeof combined, "%s;%s", py_root, old);
 #else
-    wrote = snprintf(combined, sizeof combined, "%s:%s", root, old);
+    wrote = snprintf(combined, sizeof combined, "%s:%s", py_root, old);
 #endif
   } else {
-    wrote = snprintf(combined, sizeof combined, "%s", root);
+    wrote = snprintf(combined, sizeof combined, "%s", py_root);
   }
   if (wrote < 0 || (size_t)wrote >= sizeof combined) {
     fprintf(stderr, "dmx_worker: PYTHONPATH overflow\n");
@@ -214,6 +226,26 @@ int dmx_worker_is_cuda_c(const DmxWorkerConfig *cfg) {
   return strncmp(base, "demucs_cuda_worker", 18) == 0;
 }
 
+static const char *worker_basename(const DmxWorkerConfig *cfg) {
+  const char *base = cfg->python_or_worker;
+  for (const char *p = cfg->python_or_worker; *p; p++) {
+    if (*p == '/' || *p == '\\') {
+      base = p + 1;
+    }
+  }
+  return base;
+}
+
+int dmx_worker_is_onnx(const DmxWorkerConfig *cfg) {
+  if (!cfg || !cfg->python_or_worker[0]) {
+    return 0;
+  }
+  if (cfg->module_or_empty[0] && strstr(cfg->module_or_empty, "demucs_onnx_worker")) {
+    return 1;
+  }
+  return strncmp(worker_basename(cfg), "demucs_onnx_worker", 19) == 0;
+}
+
 int dmx_worker_is_native(const DmxWorkerConfig *cfg) {
   return dmx_worker_is_mlx_c(cfg) || dmx_worker_is_cuda_c(cfg);
 }
@@ -241,6 +273,9 @@ const char *dmx_worker_backend_label(const DmxWorkerConfig *cfg) {
   if (dmx_worker_is_cuda_c(cfg)) {
     return "cuda-c";
   }
+  if (dmx_worker_is_onnx(cfg)) {
+    return "onnx";
+  }
   return worker_is_torch(cfg) ? "torch-py" : "mlx-py";
 }
 
@@ -253,6 +288,9 @@ const char *dmx_worker_backend_detail(const DmxWorkerConfig *cfg) {
   }
   if (dmx_worker_is_cuda_c(cfg)) {
     return "native C + CUDA";
+  }
+  if (dmx_worker_is_onnx(cfg)) {
+    return "ONNX Runtime";
   }
   const int dev = cfg->module_or_empty[0] != '\0';
   if (worker_is_torch(cfg)) {
@@ -269,6 +307,9 @@ int dmx_worker_resolve(DmxWorkerConfig *cfg, char *err, size_t err_sz) {
 #ifdef _WIN32
 #ifdef DMX_VARIANT_CUDA
   const char *env_cuda_worker = getenv("DEMUCS_CUDA_WORKER");
+#elif defined(DMX_VARIANT_ONNX)
+  const char *env_onnx_worker = getenv("DEMUCS_ONNX_WORKER");
+  const char *env_onnx_python = getenv("DEMUCS_ONNX_PYTHON");
 #else
   const char *env_torch_worker = getenv("DEMUCS_TORCH_WORKER");
   const char *env_torch_python = getenv("DEMUCS_TORCH_PYTHON");
@@ -276,8 +317,13 @@ int dmx_worker_resolve(DmxWorkerConfig *cfg, char *err, size_t err_sz) {
   const char *env_mlx_python = getenv("DEMUCS_MLX_PYTHON");
 #endif
 #else
+#ifdef DMX_VARIANT_ONNX
+  const char *env_onnx_worker = getenv("DEMUCS_ONNX_WORKER");
+  const char *env_onnx_python = getenv("DEMUCS_ONNX_PYTHON");
+#else
   const char *env_mlx_worker = getenv("DEMUCS_MLX_WORKER");
   const char *env_mlx_python = getenv("DEMUCS_MLX_PYTHON");
+#endif
 #endif
 
 #ifdef _WIN32
@@ -300,6 +346,34 @@ int dmx_worker_resolve(DmxWorkerConfig *cfg, char *err, size_t err_sz) {
         if (!try_path(cfg, candidate, NULL)) {
           snprintf(err, err_sz, "No demucs CUDA worker found. Set DEMUCS_CUDA_WORKER.");
           return -1;
+        }
+      }
+    }
+#elif defined(DMX_VARIANT_ONNX)
+    if (try_path(cfg, env_onnx_worker, NULL)) {
+      /* frozen onnx worker */
+    } else if (try_path(cfg, env_onnx_python, "demucs_onnx_worker")) {
+      /* dev python -m */
+    } else {
+      snprintf(candidate, sizeof candidate, "%s\\worker\\demucs_onnx_worker.exe", exe_dir);
+      if (!try_path(cfg, candidate, NULL)) {
+        snprintf(candidate, sizeof candidate, "%s\\worker\\demucs_onnx_worker\\demucs_onnx_worker.exe",
+                 exe_dir);
+        if (!try_path(cfg, candidate, NULL)) {
+          snprintf(candidate, sizeof candidate, "%s\\demucs_onnx_worker.exe", exe_dir);
+          if (!try_path(cfg, candidate, NULL)) {
+            snprintf(candidate, sizeof candidate,
+                     "%s\\..\\..\\..\\..\\demucs-onnx-worker\\.venv\\Scripts\\python.exe", exe_dir);
+            if (!try_path(cfg, candidate, "demucs_onnx_worker")) {
+              snprintf(candidate, sizeof candidate,
+                       "%s\\..\\..\\..\\demucs-onnx-worker\\.venv\\Scripts\\python.exe", exe_dir);
+              if (!try_path(cfg, candidate, "demucs_onnx_worker")) {
+                snprintf(err, err_sz,
+                         "No demucs ONNX worker found. Set DEMUCS_ONNX_WORKER or DEMUCS_ONNX_PYTHON.");
+                return -1;
+              }
+            }
+          }
         }
       }
     }
@@ -328,6 +402,46 @@ int dmx_worker_resolve(DmxWorkerConfig *cfg, char *err, size_t err_sz) {
       }
     }
 #endif
+  }
+#else
+#ifdef DMX_VARIANT_ONNX
+  if (try_path(cfg, env_onnx_worker, NULL)) {
+    /* frozen onnx worker */
+  } else if (try_path(cfg, env_onnx_python, "demucs_onnx_worker")) {
+    /* dev python -m */
+  } else {
+    char exe[DMX_PATH_MAX];
+    char exe_dir[DMX_PATH_MAX];
+    char candidate[DMX_PATH_MAX];
+    if (dmx_worker_exe_path(exe, sizeof exe) != 0) {
+      exe[0] = '\0';
+    }
+    dmx_worker_dirname_copy(exe, exe_dir, sizeof exe_dir);
+
+    snprintf(candidate, sizeof candidate, "%s/../Resources/worker/demucs_onnx_worker", exe_dir);
+    if (!try_path(cfg, candidate, NULL)) {
+      snprintf(candidate, sizeof candidate,
+               "%s/../Resources/worker/demucs_onnx_worker/demucs_onnx_worker", exe_dir);
+      if (!try_path(cfg, candidate, NULL)) {
+        snprintf(candidate, sizeof candidate, "%s/worker/demucs_onnx_worker", exe_dir);
+        if (!try_path(cfg, candidate, NULL)) {
+          snprintf(candidate, sizeof candidate, "%s/worker/demucs_onnx_worker/demucs_onnx_worker",
+                   exe_dir);
+          if (!try_path(cfg, candidate, NULL)) {
+            snprintf(candidate, sizeof candidate, "%s/demucs_onnx_worker", exe_dir);
+            try_path(cfg, candidate, NULL);
+          }
+        }
+      }
+    }
+    if (!dmx_worker_file_exists(cfg->python_or_worker)) {
+      snprintf(candidate, sizeof candidate,
+               "%s/../../../demucs-onnx-worker/.venv/bin/python", exe_dir);
+      if (!try_path(cfg, candidate, "demucs_onnx_worker")) {
+        snprintf(err, err_sz, "No demucs ONNX worker found. Set DEMUCS_ONNX_WORKER or DEMUCS_ONNX_PYTHON.");
+        return -1;
+      }
+    }
   }
 #else
   if (try_path(cfg, env_mlx_worker, NULL)) {
@@ -361,11 +475,15 @@ int dmx_worker_resolve(DmxWorkerConfig *cfg, char *err, size_t err_sz) {
     }
   }
 #endif
+#endif
 
+  const char *env_onnx_cache = getenv("DEMUCS_ONNX_CACHE");
   const char *env_cuda_cache = getenv("DEMUCS_CUDA_CACHE");
   const char *env_torch_cache = getenv("DEMUCS_TORCH_CACHE");
   const char *env_mlx_cache = getenv("DEMUCS_MLX_CACHE");
-  if (env_cuda_cache && env_cuda_cache[0]) {
+  if (env_onnx_cache && env_onnx_cache[0]) {
+    snprintf(cfg->model_cache_dir, sizeof cfg->model_cache_dir, "%s", env_onnx_cache);
+  } else if (env_cuda_cache && env_cuda_cache[0]) {
     snprintf(cfg->model_cache_dir, sizeof cfg->model_cache_dir, "%s", env_cuda_cache);
   } else if (env_torch_cache && env_torch_cache[0]) {
     snprintf(cfg->model_cache_dir, sizeof cfg->model_cache_dir, "%s", env_torch_cache);

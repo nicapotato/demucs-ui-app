@@ -58,6 +58,7 @@ int dmx_worker_run_job(const DmxWorkerConfig *cfg, DmxJob *job, DmxWorkerLive *l
       setenv("DEMUCS_CUDA_CACHE", cfg->model_cache_dir, 1);
       setenv("DEMUCS_MLX_CACHE", cfg->model_cache_dir, 1);
       setenv("DEMUCS_TORCH_CACHE", cfg->model_cache_dir, 1);
+      setenv("DEMUCS_ONNX_CACHE", cfg->model_cache_dir, 1);
     }
     dmx_worker_apply_dev_pythonpath(cfg);
 
@@ -123,7 +124,33 @@ int dmx_worker_run_job(const DmxWorkerConfig *cfg, DmxJob *job, DmxWorkerLive *l
   }
 
   int status = 0;
-  if (waitpid(pid, &status, 0) < 0) {
+  int wait_rc = 0;
+  if (live->cancel_requested) {
+    kill(pid, SIGTERM);
+    int got = 0;
+    for (int i = 0; i < 40; ++i) {
+      pid_t w = waitpid(pid, &status, WNOHANG);
+      if (w == pid) {
+        got = 1;
+        break;
+      }
+      if (w < 0) {
+        wait_rc = -1;
+        got = 1;
+        break;
+      }
+      usleep(50000);
+    }
+    if (!got) {
+      kill(pid, SIGKILL);
+      if (waitpid(pid, &status, 0) < 0) {
+        wait_rc = -1;
+      }
+    }
+  } else if (waitpid(pid, &status, 0) < 0) {
+    wait_rc = -1;
+  }
+  if (wait_rc < 0) {
     dmx_worker_set_msg(live->error_msg, sizeof live->error_msg, "waitpid failed");
     live->exit_code = -1;
   } else if (WIFEXITED(status)) {

@@ -1,16 +1,21 @@
-# Assemble a dedicated Windows zip for one worker flavor (torch or cuda).
+# Assemble a dedicated Windows zip for one worker flavor (torch, cuda, or onnx).
 # The GUI is /MT + vcpkg x64-windows-static (no VC++ redist prompt).
 $ErrorActionPreference = "Stop"
 
 $Root = Split-Path -Parent $PSScriptRoot
 $Repo = Split-Path -Parent $Root
-$Variant = if ($env:DMX_VARIANT) { $env:DMX_VARIANT } else { "torch" }
+$Variant = if ($env:DMX_VARIANT) { $env:DMX_VARIANT } else { "onnx" }
 
 switch ($Variant) {
     "cuda" {
         $AppExec = "DemucsCudaWindows"
         $ZipName = "demucs-cuda-windows.zip"
         $Display = "Demucs CUDA Windows"
+    }
+    "onnx" {
+        $AppExec = "DemucsOnnxWindows"
+        $ZipName = "demucs-onnx-windows.zip"
+        $Display = "Demucs ONNX Windows"
     }
     default {
         $Variant = "torch"
@@ -26,6 +31,7 @@ $ExeCandidates = @(
 )
 $Exe = $ExeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
 $WorkerDir = Join-Path $Root "dist\worker\demucs_torch_worker"
+$OnnxWorkerDir = Join-Path $Root "dist\worker\demucs_onnx_worker"
 $CudaWorker = Join-Path $Root "dist\worker\demucs_cuda_worker.exe"
 $Models = Join-Path $Root "models"
 $Branding = Join-Path $Repo "resources"
@@ -51,6 +57,13 @@ if ($Variant -eq "cuda") {
     if (-not (Test-Path $CudaWorker)) {
         Write-Error "Fetch or build the CUDA worker first: make -C app worker-fetch-cuda"
     }
+} elseif ($Variant -eq "onnx") {
+    if (-not (Test-Path (Join-Path $OnnxWorkerDir "demucs_onnx_worker.exe"))) {
+        Write-Error "Fetch the ONNX worker first: make -C app worker-fetch-onnx ONNX_TARGET=windows-x64"
+    }
+    if (-not (Test-Path (Join-Path $Models "htdemucs_6s_fp16weights.onnx"))) {
+        Write-Error "Missing models\htdemucs_6s_fp16weights.onnx. Run: make -C app worker-fetch-onnx ONNX_TARGET=windows-x64"
+    }
 } elseif (-not (Test-Path (Join-Path $WorkerDir "demucs_torch_worker.exe"))) {
     Write-Error "Build the torch worker first: make -C app worker-torch"
 }
@@ -66,6 +79,9 @@ if ($Variant -eq "cuda") {
     Write-Host "Worker: native CUDA ($CudaWorker)"
     New-Item -ItemType Directory -Force -Path (Join-Path $Release "worker") | Out-Null
     Copy-Item -Force $CudaWorker (Join-Path $Release "worker\demucs_cuda_worker.exe")
+} elseif ($Variant -eq "onnx") {
+    Write-Host "Worker: PyInstaller ONNX ($OnnxWorkerDir)"
+    Copy-Item -Recurse -Force $OnnxWorkerDir (Join-Path $Release "worker")
 } else {
     Write-Host "Worker: PyInstaller torch ($WorkerDir)"
     Copy-Item -Recurse -Force $WorkerDir (Join-Path $Release "worker")

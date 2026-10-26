@@ -8,14 +8,29 @@ SIBLING_MLX := $(abspath $(REPO)/../demucs-mac-silicon)
 C_MLX ?= $(if $(wildcard $(SIBLING_MLX)/worker-c/CMakeLists.txt),$(SIBLING_MLX),$(MLX))
 WINW := $(REPO)/workers/demucs-windows
 CUDA_C ?= $(abspath $(REPO)/../demucs-cuda)
+ONNXW ?= $(abspath $(REPO)/../demucs-onnx-worker)
 BUILD := $(ROOT)/build
+UNAME_S := $(shell uname -s)
+# Apple Silicon default is mlx-c. Windows and Linux default to ONNX.
+ifeq ($(UNAME_S),Darwin)
 DMX_VARIANT ?= mlx-c
+else
+DMX_VARIANT ?= onnx
+endif
 ifeq ($(DMX_VARIANT),mlx-py)
 APP_EXEC := DemucsMlxPyArmMacSilicon
 else ifeq ($(DMX_VARIANT),torch)
 APP_EXEC := DemucsTorchWindows
 else ifeq ($(DMX_VARIANT),cuda)
 APP_EXEC := DemucsCudaWindows
+else ifeq ($(DMX_VARIANT),onnx)
+ifeq ($(UNAME_S),Darwin)
+APP_EXEC := DemucsOnnxMac
+else ifeq ($(UNAME_S),Linux)
+APP_EXEC := DemucsOnnxLinux
+else
+APP_EXEC := DemucsOnnxWindows
+endif
 else
 APP_EXEC := DemucsMlxCArmMacSilicon
 endif
@@ -30,9 +45,10 @@ RUN_PY_ENV := DEMUCS_MLX_PYTHON="$(PYTHON)" DEMUCS_MLX_CACHE="$(ROOT)/models" PY
 
 .PHONY: all configure build run run-py run-c process process-py process-c clean \
 	bundle bundle-mlx-c bundle-mlx-py bundle-py \
-	worker worker-py worker-c worker-torch worker-cuda \
-	worker-fetch-c worker-fetch-py worker-fetch-cuda \
-	models models-py check-c verify-mp3 verify-psarc verify-psarc-mac externals version
+	worker worker-py worker-c worker-torch worker-cuda worker-onnx \
+	worker-fetch-c worker-fetch-py worker-fetch-cuda worker-fetch-onnx \
+	models models-py check-c verify-mp3 verify-psarc verify-psarc-mac externals version \
+	run-onnx process-onnx bundle-onnx
 
 all: build
 
@@ -122,6 +138,9 @@ worker-fetch-py:
 worker-fetch-cuda:
 	bash "$(ROOT)/scripts/fetch_cuda_worker.sh"
 
+worker-fetch-onnx:
+	bash "$(ROOT)/scripts/fetch_onnx_worker.sh" $(ONNX_TARGET)
+
 worker:
 	$(MAKE) -C "$(C_MLX)" worker
 	rm -rf "$(DIST_WORKER)"
@@ -149,6 +168,50 @@ worker-cuda:
 	mkdir -p "$(DIST_WORKER)" "$(ROOT)/models"
 	cp "$(CUDA_C)/worker-cuda/build/demucs_cuda_worker.exe" "$(DIST_WORKER)/demucs_cuda_worker.exe"
 	cp "$(CUDA_C)/models/htdemucs_6s.fp16.safetensors" "$(CUDA_C)/models/htdemucs_6s.json" "$(ROOT)/models/"
+
+# Sibling demucs-onnx-worker. Freezes the onedir and copies the ONNX file into app/models.
+worker-onnx:
+	@test -f "$(ONNXW)/Makefile" || (echo "ERROR: missing sibling $(ONNXW)" >&2; exit 1)
+	$(MAKE) -C "$(ONNXW)" models
+ifeq ($(UNAME_S),Linux)
+	$(MAKE) -C "$(ONNXW)" freeze
+else ifeq ($(UNAME_S),Darwin)
+	$(MAKE) -C "$(ONNXW)" freeze
+else
+	pwsh -File "$(ONNXW)/scripts/freeze_worker.ps1"
+endif
+	rm -rf "$(DIST_WORKER)/demucs_onnx_worker"
+	mkdir -p "$(DIST_WORKER)" "$(ROOT)/models"
+	cp -R "$(ONNXW)/dist/worker/demucs_onnx_worker" "$(DIST_WORKER)/"
+	cp "$(ONNXW)/models/htdemucs_6s_fp16weights.onnx" "$(ROOT)/models/"
+
+ifeq ($(UNAME_S),Darwin)
+ONNX_APP := DemucsOnnxMac
+ONNX_PY ?= $(ONNXW)/.venv/bin/python
+else ifeq ($(UNAME_S),Linux)
+ONNX_APP := DemucsOnnxLinux
+ONNX_PY ?= $(ONNXW)/.venv/bin/python
+else
+ONNX_APP := DemucsOnnxWindows
+ONNX_PY ?= $(ONNXW)/.venv/Scripts/python.exe
+endif
+run-onnx:
+	$(MAKE) build DMX_VARIANT=onnx
+	@test -x "$(ONNX_PY)" || (echo "ERROR: missing $(ONNX_PY). From $(ONNXW): uv sync --extra dev" >&2; exit 1)
+	@test -f "$(ONNXW)/models/htdemucs_6s_fp16weights.onnx" || (echo "ERROR: make -C $(ONNXW) models" >&2; exit 1)
+	DEMUCS_ONNX_PYTHON="$(ONNX_PY)" DEMUCS_MLX_CACHE="$(ONNXW)/models" "$(BUILD)/$(ONNX_APP)" --mp3
+
+process-onnx:
+	$(MAKE) build DMX_VARIANT=onnx
+	@test -n "$(FILES)" || (echo "Usage: make process-onnx FILES='song.wav' OUT=~/Documents/psarc/stems"; exit 1)
+	@test -x "$(ONNX_PY)" || (echo "ERROR: missing $(ONNX_PY)" >&2; exit 1)
+	DEMUCS_ONNX_PYTHON="$(ONNX_PY)" DEMUCS_MLX_CACHE="$(ONNXW)/models" \
+		"$(BUILD)/$(ONNX_APP)" $(FILES) --out "$(or $(OUT),$(HOME)/Documents/psarc/stems)" --mp3 --headless
+
+bundle-onnx:
+	$(MAKE) build DMX_VARIANT=onnx
+	$(MAKE) worker-onnx
+	DMX_VARIANT=onnx bash "$(ROOT)/scripts/build_app.sh"
 
 bundle: bundle-mlx-c
 

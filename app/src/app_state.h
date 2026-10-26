@@ -31,6 +31,10 @@ void dmx_app_add_path(DmxApp *app, const char *path);
 void dmx_app_start(DmxApp *app);
 void dmx_app_stop(DmxApp *app);
 void dmx_app_request_cancel(DmxApp *app);
+/* Move a row up (delta -1) or down (delta +1). */
+void dmx_app_move_job(DmxApp *app, int row, int delta);
+/* Drop a row. An in-progress job is cancelled first, then removed. */
+void dmx_app_remove_job(DmxApp *app, int row);
 void dmx_app_apply_settings(DmxApp *app);
 /* Load wordmark + set window icon after InitWindow / SearchAndSetResourceDir. */
 void dmx_app_load_branding(DmxApp *app);

@@ -4,8 +4,9 @@ Standalone raylib GUI for Demucs stem separation. One download per worker;
 install the app that matches the backend you want.
 
 - **macOS Apple Silicon:** [demucs-mac-silicon](https://github.com/nicapotato/demucs-mac-silicon) (MLX + Metal). CI downloads the worker pinned by `MAC_WORKER_TAG` in [`project.conf`](project.conf).
-- **Windows x86_64 torch:** [demucs-windows](https://github.com/nicapotato/demucs-windows) (official Demucs + CUDA torch).
-- **Windows x86_64 cuda:** [demucs-cuda](https://github.com/nicapotato/demucs-cuda) (native C + CUDA). CI downloads the worker pinned by `CUDA_WORKER_TAG` in [`project.conf`](project.conf).
+- **Windows, Linux, and Intel Mac:** [demucs-onnx-worker](https://github.com/nicapotato/demucs-onnx-worker). CI downloads the worker pinned by `ONNX_WORKER_TAG` in [`project.conf`](project.conf). DirectML on Windows; CPU on Linux and Intel Mac.
+- **Windows CUDA (optional):** [demucs-cuda](https://github.com/nicapotato/demucs-cuda) (native C + CUDA). CI downloads the worker pinned by `CUDA_WORKER_TAG` in [`project.conf`](project.conf).
+- **Windows torch (optional):** [demucs-windows](https://github.com/nicapotato/demucs-windows) (official Demucs + CUDA torch). `make ci BUILD_PLATFORM=windows-torch`.
 
 Version: [`project.conf`](project.conf). Product names:
 
@@ -13,10 +14,13 @@ Version: [`project.conf`](project.conf). Product names:
 |--------|-----|-----|--------------|
 | mlx-c (mac arm) | `DemucsMlxCArmMacSilicon.app` | `demucs-mlx-c-arm-mac-silicon.zip` | `mlx-c-arm-mac-silicon` |
 | mlx-py (mac arm) | `DemucsMlxPyArmMacSilicon.app` | `demucs-mlx-py-arm-mac-silicon.zip` | `mlx-py-arm-mac-silicon` |
-| torch (Windows NVIDIA) | `DemucsTorchWindows.exe` | `demucs-torch-windows.zip` | `torch-windows` |
-| cuda (Windows NVIDIA) | `DemucsCudaWindows.exe` | `demucs-cuda-windows.zip` | `cuda-windows` |
+| onnx (Windows) | `DemucsOnnxWindows.exe` | `demucs-onnx-windows.zip` | `onnx-windows` |
+| onnx (Linux x64) | `DemucsOnnxLinux` | `demucs-onnx-linux-x64.zip` | `onnx-linux` |
+| onnx (Mac Intel) | `DemucsOnnxMac.app` | `demucs-onnx-mac-x64.zip` | `onnx-mac-intel` |
+| torch (Windows, optional) | `DemucsTorchWindows.exe` | `demucs-torch-windows.zip` | `torch-windows` |
+| cuda (Windows NVIDIA, optional) | `DemucsCudaWindows.exe` | `demucs-cuda-windows.zip` | `cuda-windows` |
 
-itch games: [demucs-app](https://nicapotato.itch.io/demucs-app) (ci) and `demucs-app-dev` (release).
+itch: both workflows push to [demucs-app-dev](https://nicapotato.itch.io/demucs-app-dev).
 
 ## Clone
 
@@ -43,13 +47,25 @@ make bundle                  # mlx-c .app + zip
 make bundle-mlx-py           # mlx-py .app + zip
 ```
 
-CMake flavor: `-DDMX_VARIANT=mlx-c` (default on mac) or `mlx-py`.
+CMake flavor: `-DDMX_VARIANT=mlx-c` (default on mac) or `mlx-py`. A local ONNX build on this Mac is `make -C app worker-fetch-onnx ONNX_TARGET=mac-arm64` then `make -C app run-onnx`. That zip is not the Apple Silicon download.
 
 From-source worker builds (compiles mlx-c, slow) still work via `make -C app worker` /
 `make -C app models`. A sibling `../demucs-mac-silicon` checkout is used when present;
 override with `C_MLX=...`. Dev Python: `make -C app run-py`.
 
-## Windows zip (local, on a Windows box)
+## Windows ONNX zip (local, on a Windows box)
+
+```powershell
+cmake -B app/build -S app -DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows-static -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DDMX_VARIANT=onnx -A x64
+cmake --build app/build --config Release --parallel
+# gh must be logged in to download ONNX_WORKER_TAG
+bash app/scripts/fetch_onnx_worker.sh windows-x64
+$env:DMX_VARIANT = "onnx"
+pwsh -File app/scripts/build_windows.ps1
+# → app/dist/demucs-onnx-windows.zip
+```
+
+## Windows torch zip (optional, local, on a Windows box)
 
 ```powershell
 git submodule update --init --recursive
@@ -85,8 +101,10 @@ pwsh -File app/scripts/build_windows.ps1
 
 ## Distribution
 
-1. **itch.io** — https://nicapotato.itch.io/demucs-app (`mlx-c-arm-mac-silicon`, `mlx-py-arm-mac-silicon`, `torch-windows`) and https://nicapotato.itch.io/demucs-app-dev (same channels plus `cuda-windows`)
-2. **GitHub Release** — zip + sha256 on a `v*` tag. Windows zip omitted if ≥ 2 GB.
+1. **itch.io** — https://nicapotato.itch.io/demucs-app-dev. Standard channels: `mlx-c-arm-mac-silicon`, `mlx-py-arm-mac-silicon`, `onnx-windows`, `onnx-linux`, `onnx-mac-intel`. Optional: `cuda-windows`, `torch-windows`.
+2. **GitHub Release** — zip + sha256 on a `v*` tag. A Windows zip is omitted from the GitHub Release if it is ≥ 2 GB.
+
+`make ci` / `make release` (`BUILD_PLATFORM=all`) builds the standard set. Release `all` also builds Windows CUDA. Torch is `BUILD_PLATFORM=windows-torch`. Apple Silicon ONNX is not a download; that Mac stays MLX.
 
 Secret: `BUTLER_API_KEY` on this repo.
 
@@ -95,6 +113,9 @@ make ci                   # or: make ci-watch
 make ci PUBLISH_ITCH=false
 make ci BUILD_PLATFORM=macos-c
 make ci BUILD_PLATFORM=windows
+make ci BUILD_PLATFORM=linux
+make ci BUILD_PLATFORM=macos-intel
+make ci BUILD_PLATFORM=windows-torch
 make release BUILD_PLATFORM=windows-cuda PUBLISH_GH_RELEASE=false
 make release
 ```

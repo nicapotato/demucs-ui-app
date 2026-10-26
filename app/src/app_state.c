@@ -10,13 +10,16 @@
 #include <string.h>
 
 #ifndef _WIN32
+#include <signal.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#else
+#include <direct.h>
 #endif
 
 typedef struct {
   DmxApp *app;
-  int job_index;
+  int job_slot;
 } DmxWorkerArgs;
 
 static int is_supported_path(const char *path) {
@@ -58,7 +61,8 @@ static int path_is_wav(const char *path) {
   return strcmp(dot, ".wav") == 0 || strcmp(dot, ".WAV") == 0;
 }
 
-static int afconvert_to_44100_wav(const char *src, char *out, size_t out_sz, char *err, size_t err_sz) {
+static int afconvert_to_44100_wav(const char *src, char *out, size_t out_sz, char *err, size_t err_sz,
+                                  DmxWorkerLive *live) {
   char *tmp_err = NULL;
   if (rs_temp_make_empty_with_suffix(".wav", out, out_sz, &tmp_err) != 0) {
     snprintf(err, err_sz, "%s", tmp_err ? tmp_err : "temp wav failed");
@@ -76,8 +80,43 @@ static int afconvert_to_44100_wav(const char *src, char *out, size_t out_sz, cha
           (char *)NULL);
     _exit(127);
   }
+  if (live) {
+    live->pid = (int)pid;
+  }
   int status = 0;
-  if (waitpid(pid, &status, 0) < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+  for (;;) {
+    pid_t w = waitpid(pid, &status, WNOHANG);
+    if (w == pid) {
+      break;
+    }
+    if (w < 0) {
+      if (live) {
+        live->pid = 0;
+      }
+      remove(out);
+      snprintf(err, err_sz, "afconvert failed for %s (C worker needs WAV/MP3/M4A/AIFF)", src);
+      return -1;
+    }
+    if (live && live->cancel_requested) {
+      kill(pid, SIGTERM);
+      usleep(200000);
+      if (waitpid(pid, &status, WNOHANG) == 0) {
+        kill(pid, SIGKILL);
+        waitpid(pid, &status, 0);
+      }
+      if (live) {
+        live->pid = 0;
+      }
+      remove(out);
+      snprintf(err, err_sz, "Cancelled");
+      return -1;
+    }
+    usleep(50000);
+  }
+  if (live) {
+    live->pid = 0;
+  }
+  if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
     remove(out);
     snprintf(err, err_sz, "afconvert failed for %s (C worker needs WAV/MP3/M4A/AIFF)", src);
     return -1;
@@ -91,8 +130,9 @@ int dmx_app_status_count(const DmxApp *app, DmxJobStatus status) {
     return 0;
   }
   int n = 0;
-  for (int i = 0; i < app->queue.count; ++i) {
-    if (app->queue.jobs[i].status == status) {
+  for (int row = 0; row < app->queue.count; ++row) {
+    const DmxJob *j = dmx_queue_at(&app->queue, row);
+    if (j && j->status == status) {
       ++n;
     }
   }
@@ -260,6 +300,38 @@ void dmx_app_request_cancel(DmxApp *app) {
   dmx_app_stop(app);
 }
 
+void dmx_app_move_job(DmxApp *app, int row, int delta) {
+  if (!app) {
+    return;
+  }
+  dmx_queue_move(&app->queue, row, delta);
+}
+
+void dmx_app_remove_job(DmxApp *app, int row) {
+  if (!app) {
+    return;
+  }
+  int rc = dmx_queue_remove(&app->queue, row);
+  if (rc < 0) {
+    return;
+  }
+  if (rc == 1) {
+    DmxJob *j = dmx_queue_at_mut(&app->queue, row);
+    if (j) {
+      snprintf(j->message, sizeof j->message, "Cancelling...");
+    }
+    dmx_worker_request_cancel(&app->live);
+    snprintf(app->status_line, sizeof app->status_line, "Cancelling...");
+    return;
+  }
+  int q = dmx_app_queued_count(app);
+  if (q > 0 && !app->processing_enabled) {
+    snprintf(app->status_line, sizeof app->status_line, "Removed - %d still queued", q);
+  } else {
+    snprintf(app->status_line, sizeof app->status_line, "Removed");
+  }
+}
+
 static void cleanup_temp(DmxJob *job) {
   if (job && job->owns_temp_audio && job->prepared_audio[0]) {
     remove(job->prepared_audio);
@@ -268,20 +340,77 @@ static void cleanup_temp(DmxJob *job) {
   }
 }
 
+static void discard_partial_stems(const DmxJob *job) {
+  static const char *stems[] = {"drums", "bass", "other", "vocals", "guitar", "piano"};
+  static const char *exts[] = {"mp3", "wav"};
+  char path[DMX_PATH_MAX];
+  if (!job || !job->out_dir[0] || !job->track_name[0]) {
+    return;
+  }
+  for (size_t s = 0; s < sizeof stems / sizeof stems[0]; ++s) {
+    for (size_t e = 0; e < sizeof exts / sizeof exts[0]; ++e) {
+      int n = snprintf(path, sizeof path, "%s/%s/%s.%s", job->out_dir, job->track_name, stems[s], exts[e]);
+      if (n > 0 && (size_t)n < sizeof path) {
+        remove(path);
+      }
+    }
+  }
+  int n = snprintf(path, sizeof path, "%s/%s", job->out_dir, job->track_name);
+  if (n > 0 && (size_t)n < sizeof path) {
+#ifdef _WIN32
+    _rmdir(path);
+#else
+    rmdir(path);
+#endif
+  }
+}
+
+static void mark_cancelled(DmxApp *app, DmxJob *job, int discard_stems) {
+  job->status = DMX_JOB_CANCELLED;
+  snprintf(job->message, sizeof job->message, "Cancelled");
+  if (discard_stems) {
+    discard_partial_stems(job);
+  }
+  cleanup_temp(job);
+  snprintf(app->live.status_msg, sizeof app->live.status_msg, "Cancelled");
+  app->live.error_msg[0] = '\0';
+  app->live.running = 0;
+  app->live.done = 1;
+}
+
+static int cancel_requested(const DmxApp *app) { return app->live.cancel_requested; }
+
 static void *worker_thread_main(void *arg) {
   DmxWorkerArgs *wa = (DmxWorkerArgs *)arg;
   DmxApp *app = wa->app;
-  DmxJob *job = &app->queue.jobs[wa->job_index];
+  DmxJob *job = &app->queue.jobs[wa->job_slot];
+
+  if (cancel_requested(app)) {
+    mark_cancelled(app, job, 0);
+    free(wa);
+    return NULL;
+  }
 
   snprintf(job->out_dir, sizeof job->out_dir, "%s", app->output_dir);
   job->status = DMX_JOB_PREPARING;
-  snprintf(job->message, sizeof job->message, "Preparing...");
+  if (!job->remove_when_done) {
+    snprintf(job->message, sizeof job->message, "Preparing...");
+  }
   snprintf(app->live.status_msg, sizeof app->live.status_msg, "Preparing...");
 
   if (job->is_psarc) {
     char *errmsg = NULL;
-    if (dmx_psarc_extract_audio(job->input_path, job->prepared_audio, sizeof job->prepared_audio, &errmsg) !=
-        0) {
+    int rc = dmx_psarc_extract_audio(job->input_path, job->prepared_audio, sizeof job->prepared_audio, &errmsg);
+    if (cancel_requested(app)) {
+      if (rc == 0) {
+        job->owns_temp_audio = 1;
+      }
+      free(errmsg);
+      mark_cancelled(app, job, 0);
+      free(wa);
+      return NULL;
+    }
+    if (rc != 0) {
       job->status = DMX_JOB_ERROR;
       snprintf(job->message, sizeof job->message, "%s", errmsg ? errmsg : "psarc extract failed");
       snprintf(app->live.error_msg, sizeof app->live.error_msg, "%s", job->message);
@@ -299,17 +428,22 @@ static void *worker_thread_main(void *arg) {
   }
 
 #ifdef __APPLE__
-  if (dmx_worker_is_mlx_c(&app->worker_cfg) && !path_is_wav(job->prepared_audio)) {
+  if ((dmx_worker_is_mlx_c(&app->worker_cfg) || dmx_worker_is_onnx(&app->worker_cfg)) &&
+      !path_is_wav(job->prepared_audio)) {
     char converted[DMX_PATH_MAX];
     char conv_err[512];
-    if (afconvert_to_44100_wav(job->prepared_audio, converted, sizeof converted, conv_err,
-                               sizeof conv_err) != 0) {
-      job->status = DMX_JOB_ERROR;
-      snprintf(job->message, sizeof job->message, "%s", conv_err);
-      snprintf(app->live.error_msg, sizeof app->live.error_msg, "%s", conv_err);
-      cleanup_temp(job);
-      app->live.done = 1;
-      app->live.running = 0;
+    if (afconvert_to_44100_wav(job->prepared_audio, converted, sizeof converted, conv_err, sizeof conv_err,
+                               &app->live) != 0) {
+      if (cancel_requested(app)) {
+        mark_cancelled(app, job, 0);
+      } else {
+        job->status = DMX_JOB_ERROR;
+        snprintf(job->message, sizeof job->message, "%s", conv_err);
+        snprintf(app->live.error_msg, sizeof app->live.error_msg, "%s", conv_err);
+        cleanup_temp(job);
+        app->live.done = 1;
+        app->live.running = 0;
+      }
       free(wa);
       return NULL;
     }
@@ -321,34 +455,32 @@ static void *worker_thread_main(void *arg) {
   }
 #endif
 
-  if (app->live.cancel_requested) {
-    job->status = DMX_JOB_CANCELLED;
-    snprintf(job->message, sizeof job->message, "Cancelled");
-    cleanup_temp(job);
-    app->live.done = 1;
-    app->live.running = 0;
+  if (cancel_requested(app)) {
+    mark_cancelled(app, job, 0);
     free(wa);
     return NULL;
   }
 
   job->status = DMX_JOB_RUNNING;
-  snprintf(job->message, sizeof job->message, "Running...");
+  if (!job->remove_when_done) {
+    snprintf(job->message, sizeof job->message, "Running...");
+  }
   dmx_worker_run_job(&app->worker_cfg, job, &app->live);
 
-  if (app->live.cancel_requested) {
-    job->status = DMX_JOB_CANCELLED;
-    snprintf(job->message, sizeof job->message, "Cancelled");
+  if (cancel_requested(app)) {
+    mark_cancelled(app, job, 1);
   } else if (app->live.exit_code == 0) {
     job->status = DMX_JOB_DONE;
     job->progress_pct = 100.0f;
     snprintf(job->message, sizeof job->message, "Wrote stems to %s/%s", job->out_dir, job->track_name);
+    cleanup_temp(job);
   } else {
     job->status = DMX_JOB_ERROR;
     snprintf(job->message, sizeof job->message, "%s",
              app->live.error_msg[0] ? app->live.error_msg : "Worker failed");
+    cleanup_temp(job);
   }
 
-  cleanup_temp(job);
   free(wa);
   return NULL;
 }
@@ -356,24 +488,35 @@ static void *worker_thread_main(void *arg) {
 void dmx_app_tick(DmxApp *app) {
   dmx_app_apply_settings(app);
 
-  /* Sync live progress into active job */
-  if (app->queue.active_index >= 0 && app->queue.active_index < app->queue.count) {
-    DmxJob *j = &app->queue.jobs[app->queue.active_index];
+  /* Sync live progress into the running slot. Reordering does not move that slot. */
+  if (app->queue.active_slot >= 0 && app->queue.active_slot < DMX_JOB_MAX &&
+      app->queue.slot_used[app->queue.active_slot]) {
+    DmxJob *j = &app->queue.jobs[app->queue.active_slot];
     if (j->status == DMX_JOB_RUNNING || j->status == DMX_JOB_PREPARING) {
-      j->progress_pct = app->live.progress_pct;
-      if (app->live.status_msg[0]) {
-        snprintf(j->message, sizeof j->message, "%s", app->live.status_msg);
+      if (j->remove_when_done || app->live.cancel_requested) {
+        snprintf(j->message, sizeof j->message, "Cancelling...");
+      } else {
+        j->progress_pct = app->live.progress_pct;
+        if (app->live.status_msg[0]) {
+          snprintf(j->message, sizeof j->message, "%s", app->live.status_msg);
+        }
       }
     }
   }
 
   /* Join finished worker */
   if (app->worker_thread && app->live.done && !app->live.running) {
+    int slot = app->queue.active_slot;
+    int drop = slot >= 0 && slot < DMX_JOB_MAX && app->queue.slot_used[slot] &&
+               app->queue.jobs[slot].remove_when_done;
     dmx_thread_join(app->worker_thread);
     app->worker_thread = NULL;
-    app->queue.active_index = -1;
+    app->queue.active_slot = -1;
     app->cancel_pressed = 0;
     dmx_worker_live_reset(&app->live);
+    if (drop) {
+      dmx_queue_drop_slot(&app->queue, slot);
+    }
   }
 
   /* Start next job only when user pressed Start and output folder is set. */
@@ -392,18 +535,22 @@ void dmx_app_tick(DmxApp *app) {
         return;
       }
       wa->app = app;
-      wa->job_index = idx;
-      app->queue.active_index = idx;
+      wa->job_slot = idx;
+      app->queue.active_slot = idx;
       dmx_worker_live_reset(&app->live);
       if (dmx_thread_spawn(&app->worker_thread, worker_thread_main, wa) != 0) {
         free(wa);
         next->status = DMX_JOB_ERROR;
         snprintf(next->message, sizeof next->message, "Failed to spawn worker thread");
-        app->queue.active_index = -1;
+        app->queue.active_slot = -1;
         app->worker_thread = NULL;
       }
     } else {
       app->processing_enabled = 0;
+      if (app->queue.count == 0) {
+        snprintf(app->status_line, sizeof app->status_line, "Queue empty");
+        return;
+      }
       int done = dmx_app_status_count(app, DMX_JOB_DONE);
       int failed = dmx_app_status_count(app, DMX_JOB_ERROR) + dmx_app_status_count(app, DMX_JOB_CANCELLED);
       if (failed > 0) {

@@ -12,6 +12,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#endif
+
 #ifdef _WIN32
 #define strtok_r strtok_s
 #endif
@@ -184,7 +188,13 @@ static void fill_info_rows(const DmxApp *app, DmxUiLayout *L) {
     r = &L->rows[L->n_rows++];
     r->label = "DEVICE";
     if (strcmp(app->live.device, "cpu") == 0) {
+#if defined(TARGET_CPU_ARM64) && TARGET_CPU_ARM64
+      snprintf(r->value, sizeof r->value, "CPU (slow - MLX on Apple Silicon recommended)");
+#elif defined(__APPLE__)
+      snprintf(r->value, sizeof r->value, "CPU (slow)");
+#else
       snprintf(r->value, sizeof r->value, "CPU (slow - NVIDIA CUDA recommended)");
+#endif
       r->col = DMX_COL_ACCENT_ORANGE;
     } else {
       upper_copy(r->value, sizeof r->value, app->live.device);
@@ -335,7 +345,7 @@ static void update_scroll(const DmxApp *app, const DmxUiLayout *L) {
   }
 
   /* Keep the job that just started in view. */
-  int active = app->queue.active_index;
+  int active = dmx_queue_active_row(&app->queue);
   if (active != g_follow_index) {
     g_follow_index = active;
     if (active >= 0) {
@@ -484,10 +494,18 @@ void dmx_ui_shutdown(void) {
 static void draw_header(const DmxApp *app, const DmxUiLayout *L) {
 #ifdef _WIN32
   const char *title = "Demucs CUDA Windows";
-  const char *subtitle = "Windows stem separator (Demucs + CUDA)";
-#else
+  const char *subtitle = "Windows stem separator (NVIDIA CUDA recommended)";
+#elif defined(__APPLE__)
+#if defined(TARGET_CPU_ARM64) && TARGET_CPU_ARM64
   const char *title = "Demucs MLX ARM Mac Silicon";
-  const char *subtitle = "Apple Silicon stem separator";
+  const char *subtitle = "Apple Silicon stem separator (MLX recommended)";
+#else
+  const char *title = "Demucs";
+  const char *subtitle = "macOS stem separator";
+#endif
+#else
+  const char *title = "Demucs";
+  const char *subtitle = "Linux stem separator (NVIDIA CUDA recommended)";
 #endif
   const float m = DMX_UI_MARGIN;
   if (app->logo_loaded && app->logo_tex.id > 0) {
@@ -554,29 +572,82 @@ static void draw_drop_zone(const DmxApp *app, const DmxUiLayout *L, int busy) {
 }
 
 typedef struct {
-  float x_idx, x_name, x_status, x_prog;
-  float w_idx, w_name, w_status, w_prog;
+  float x_idx, x_name, x_status, x_prog, x_act;
+  float w_idx, w_name, w_status, w_prog, w_act;
 } DmxTableCols;
+
+typedef struct {
+  Rectangle up, down, dismiss;
+} DmxRowActs;
 
 static DmxTableCols table_cols(const DmxUiLayout *L) {
   DmxTableCols c;
   float w = L->body.width;
-  c.w_idx = 40.0f;
-  c.w_status = 112.0f;
-  c.w_prog = fminf(220.0f, fmaxf(120.0f, w * 0.24f));
-  c.w_name = w - c.w_idx - c.w_status - c.w_prog;
-  if (c.w_name < 80.0f) {
-    c.w_name = 80.0f;
+  c.w_idx = 36.0f;
+  c.w_act = 84.0f;
+  c.w_status = 100.0f;
+  c.w_prog = fminf(180.0f, fmaxf(96.0f, w * 0.20f));
+  c.w_name = w - c.w_idx - c.w_status - c.w_prog - c.w_act;
+  if (c.w_name < 48.0f) {
+    c.w_prog -= 48.0f - c.w_name;
+    if (c.w_prog < 64.0f) {
+      c.w_prog = 64.0f;
+    }
+    c.w_name = w - c.w_idx - c.w_status - c.w_prog - c.w_act;
   }
   c.x_idx = L->body.x;
   c.x_name = c.x_idx + c.w_idx;
   c.x_status = c.x_name + c.w_name;
   c.x_prog = c.x_status + c.w_status;
+  c.x_act = c.x_prog + c.w_prog;
   return c;
 }
 
-/* Returns hovered row index or -1. */
-static int draw_jobs_table(const DmxApp *app, const DmxUiLayout *L) {
+static DmxRowActs row_acts(const DmxTableCols *c, float ry) {
+  DmxRowActs a;
+  const float bw = 24.0f;
+  float by = ry + (DMX_UI_ROW_H - bw) * 0.5f;
+  float x = c->x_act + 2.0f;
+  a.up = (Rectangle){x, by, bw, bw};
+  a.down = (Rectangle){x + bw + 4.0f, by, bw, bw};
+  a.dismiss = (Rectangle){x + (bw + 4.0f) * 2.0f, by, bw, bw};
+  return a;
+}
+
+static void draw_chevron(Rectangle r, int down, Color col) {
+  float cx = r.x + r.width * 0.5f;
+  float left = r.x + 7.0f;
+  float right = r.x + r.width - 7.0f;
+  float y0 = down ? r.y + 8.0f : r.y + r.height - 8.0f;
+  float y1 = down ? r.y + r.height - 8.0f : r.y + 8.0f;
+  DrawLineEx((Vector2){left, y0}, (Vector2){cx, y1}, 2.0f, col);
+  DrawLineEx((Vector2){cx, y1}, (Vector2){right, y0}, 2.0f, col);
+}
+
+static void draw_x_mark(Rectangle r, Color col) {
+  float p = 7.0f;
+  DrawLineEx((Vector2){r.x + p, r.y + p}, (Vector2){r.x + r.width - p, r.y + r.height - p}, 2.0f, col);
+  DrawLineEx((Vector2){r.x + r.width - p, r.y + p}, (Vector2){r.x + p, r.y + r.height - p}, 2.0f, col);
+}
+
+/* kind: 0 up, 1 down, 2 remove. Returns 1 when the enabled button is hovered. */
+static int draw_row_btn(Rectangle r, int kind, int enabled) {
+  int hover = enabled && dmx_ui_hovered(r);
+  Color fill = enabled ? dmx_ui_hover_lift(DMX_COL_PANEL_RAISED, hover) : DMX_COL_FIELD;
+  Color border = !enabled ? Fade(DMX_COL_BORDER, 0.18f) : (hover ? DMX_COL_HILIGHT : Fade(DMX_COL_BORDER, 0.45f));
+  Color icon = !enabled ? DMX_COL_BORDER_DIM : (kind == 2 ? (hover ? WHITE : DMX_COL_ACCENT_RED) : DMX_COL_TEXT);
+  DrawRectangleRec(r, fill);
+  DrawRectangleLinesEx(r, 1.0f, border);
+  if (kind == 2) {
+    draw_x_mark(r, icon);
+  } else {
+    draw_chevron(r, kind == 1, icon);
+  }
+  return hover;
+}
+
+/* Returns hovered row index or -1. *action_hover is 1 when the pointer is on a row button. */
+static int draw_jobs_table(const DmxApp *app, const DmxUiLayout *L, int *action_hover) {
   const float m = DMX_UI_MARGIN;
   dmx_ui_draw_header((int)m, (int)L->jobs_y, "JOBS", DMX_UI_JOBS_HDR_FS, DMX_COL_TEXT);
   {
@@ -602,6 +673,10 @@ static int draw_jobs_table(const DmxApp *app, const DmxUiLayout *L) {
   DrawRectangleRec((Rectangle){body.x, body.y, body.width + DMX_SBAR_W, body.height}, DMX_COL_BG);
   Vector2 mp = GetMousePosition();
   int hovered = -1;
+  if (action_hover) {
+    *action_hover = 0;
+  }
+  int active_row = dmx_queue_active_row(&app->queue);
 
   BeginScissorMode((int)body.x, (int)body.y, (int)body.width, (int)body.height);
   if (app->queue.count == 0) {
@@ -614,10 +689,13 @@ static int draw_jobs_table(const DmxApp *app, const DmxUiLayout *L) {
     last = app->queue.count;
   }
   for (int i = first < 0 ? 0 : first; i < last; ++i) {
-    const DmxJob *j = &app->queue.jobs[i];
+    const DmxJob *j = dmx_queue_at(&app->queue, i);
+    if (!j) {
+      continue;
+    }
     float ry = body.y + (float)i * DMX_UI_ROW_H - g_scroll;
     Rectangle row = {body.x, ry, body.width, DMX_UI_ROW_H};
-    int is_active = (i == app->queue.active_index);
+    int is_active = (i == active_row);
     int is_hover = !g_sbar_drag && CheckCollisionPointRec(mp, body) && CheckCollisionPointRec(mp, row);
     if (is_hover) {
       hovered = i;
@@ -658,6 +736,14 @@ static int draw_jobs_table(const DmxApp *app, const DmxUiLayout *L) {
       DrawRectangleLinesEx(bar, 1.0f, Fade(DMX_COL_BORDER, 0.4f));
     }
     DrawText(pct, (int)(bar.x + bar.width + 8.0f), (int)(ry + (DMX_UI_ROW_H - 16.0f) * 0.5f), 16, tc);
+
+    DmxRowActs acts = row_acts(&c, ry);
+    int up_h = draw_row_btn(acts.up, 0, i > 0);
+    int down_h = draw_row_btn(acts.down, 1, i + 1 < app->queue.count);
+    int x_h = draw_row_btn(acts.dismiss, 2, 1);
+    if (action_hover && (up_h || down_h || x_h)) {
+      *action_hover = 1;
+    }
   }
   EndScissorMode();
 
@@ -705,7 +791,9 @@ void dmx_ui_draw(DmxApp *app, int screen_w, int screen_h) {
 
   any_hover |= draw_info(app, &L, !busy);
   draw_drop_zone(app, &L, busy);
-  int hovered_row = draw_jobs_table(app, &L);
+  int action_hover = 0;
+  int hovered_row = draw_jobs_table(app, &L, &action_hover);
+  any_hover |= action_hover;
   if (L.max_scroll > 0.0f && dmx_ui_hovered(L.sbar)) {
     any_hover = 1;
   }
@@ -722,10 +810,10 @@ void dmx_ui_draw(DmxApp *app, int screen_w, int screen_h) {
   int vw = MeasureText(ver, 14);
   char footer[DMX_PATH_MAX + DMX_MSG_MAX + 8];
   Color fc = DMX_COL_TEXT_MUTED;
-  if (hovered_row >= 0) {
-    const DmxJob *j = &app->queue.jobs[hovered_row];
-    snprintf(footer, sizeof footer, "%s - %s", j->input_path, j->message);
-    fc = j->status == DMX_JOB_ERROR ? DMX_COL_ACCENT_RED : DMX_COL_TEXT_FAINT;
+  const DmxJob *hovered_job = hovered_row >= 0 ? dmx_queue_at(&app->queue, hovered_row) : NULL;
+  if (hovered_job) {
+    snprintf(footer, sizeof footer, "%s - %s", hovered_job->input_path, hovered_job->message);
+    fc = hovered_job->status == DMX_JOB_ERROR ? DMX_COL_ACCENT_RED : DMX_COL_TEXT_FAINT;
   } else {
     snprintf(footer, sizeof footer, "%s", app->status_line);
   }
@@ -755,6 +843,27 @@ int dmx_ui_handle_click(DmxApp *app, int x, int y, int screen_w, int screen_h) {
     app->write_mp3 = !app->write_mp3;
     dmx_app_apply_settings(app);
     return 1;
+  }
+  if (point_in(x, y, L.body)) {
+    float rel = (float)y - L.body.y + g_scroll;
+    int row = (int)(rel / DMX_UI_ROW_H);
+    if (row >= 0 && row < app->queue.count) {
+      float ry = L.body.y + (float)row * DMX_UI_ROW_H - g_scroll;
+      DmxTableCols cols = table_cols(&L);
+      DmxRowActs acts = row_acts(&cols, ry);
+      if (point_in(x, y, acts.up)) {
+        dmx_app_move_job(app, row, -1);
+        return 1;
+      }
+      if (point_in(x, y, acts.down)) {
+        dmx_app_move_job(app, row, 1);
+        return 1;
+      }
+      if (point_in(x, y, acts.dismiss)) {
+        dmx_app_remove_job(app, row);
+        return 1;
+      }
+    }
   }
   if (point_in(x, y, L.start_stop_btn)) {
     if (app->processing_enabled) {
