@@ -243,7 +243,7 @@ int dmx_worker_is_onnx(const DmxWorkerConfig *cfg) {
   if (cfg->module_or_empty[0] && strstr(cfg->module_or_empty, "demucs_onnx_worker")) {
     return 1;
   }
-  return strncmp(worker_basename(cfg), "demucs_onnx_worker", 19) == 0;
+  return strncmp(worker_basename(cfg), "demucs_onnx_worker", 18) == 0;
 }
 
 int dmx_worker_is_native(const DmxWorkerConfig *cfg) {

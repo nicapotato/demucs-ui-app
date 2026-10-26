@@ -224,7 +224,10 @@ jobs:
       - name: Install Homebrew deps
         run: |
           set -euo pipefail
-          brew install cmake libvorbis libogg ffmpeg
+          brew install cmake ffmpeg
+
+      - name: Build static libogg and libvorbis
+        run: bash app/scripts/build_static_vorbis.sh
 
       - name: Wire externals (raylib + vgmstream source)
         run: |
@@ -334,8 +337,8 @@ jobs:
       - name: Install build dependencies
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          sudo DEBIAN_FRONTEND=noninteractive apt-get update -o Acquire::ForceIPv4=true -o DPkg::Lock::Timeout=120
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             build-essential cmake pkg-config zip unzip \
             libvorbis-dev libogg-dev zlib1g-dev \
             libgl1-mesa-dev libx11-dev libxrandr-dev libxi-dev \
@@ -579,6 +582,7 @@ jobs:
         if: github.event.inputs.publish_itch == 'true'
         env:
           BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+        shell: bash
         run: |
           set -euo pipefail
           if [ -z "${BUTLER_API_KEY:-}" ]; then
