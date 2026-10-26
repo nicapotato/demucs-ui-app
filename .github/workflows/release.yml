@@ -40,7 +40,7 @@ permissions:
 
 env:
   ITCH_USER: nicapotato
-  ITCH_GAME: demucs-app
+  ITCH_GAME: demucs-app-dev
   PYTHON_VERSION: "3.12"
 
 jobs:
