@@ -69,6 +69,18 @@ static void append_quoted(char *cmd, size_t cmd_sz, const char *arg) {
   }
 }
 
+/* stdout and stderr share one pipe: JSON events drive the UI, anything else
+ * (Python tracebacks, ORT logs) is echoed to the console. */
+static void handle_line(DmxWorkerLive *live, const char *line, char *last_plain, size_t last_sz) {
+  if (strstr(line, "\"event\"")) {
+    dmx_worker_handle_json_line(live, line);
+  } else if (line[0]) {
+    fprintf(stderr, "[worker] %s\n", line);
+    fflush(stderr);
+    snprintf(last_plain, last_sz, "%s", line);
+  }
+}
+
 void dmx_worker_request_cancel(DmxWorkerLive *live) {
   if (!live) {
     return;
@@ -167,7 +179,7 @@ int dmx_worker_run_job(const DmxWorkerConfig *cfg, DmxJob *job, DmxWorkerLive *l
   si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
   si.wShowWindow = SW_HIDE;
   si.hStdOutput = write_pipe;
-  si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
+  si.hStdError = write_pipe;
   si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
 
   BOOL ok = CreateProcessW(NULL, wcmd, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi);
@@ -187,6 +199,8 @@ int dmx_worker_run_job(const DmxWorkerConfig *cfg, DmxJob *job, DmxWorkerLive *l
 
   char buf[4096];
   char line[2048];
+  char last_plain[DMX_MSG_MAX];
+  last_plain[0] = '\0';
   size_t line_n = 0;
   DWORD nread = 0;
   while (ReadFile(read_pipe, buf, sizeof buf, &nread, NULL) && nread > 0) {
@@ -197,7 +211,7 @@ int dmx_worker_run_job(const DmxWorkerConfig *cfg, DmxJob *job, DmxWorkerLive *l
         if (line_n > 0 && line[line_n - 1] == '\r') {
           line[line_n - 1] = '\0';
         }
-        dmx_worker_handle_json_line(live, line);
+        handle_line(live, line, last_plain, sizeof last_plain);
         line_n = 0;
         if (live->cancel_requested) {
           break;
@@ -212,7 +226,7 @@ int dmx_worker_run_job(const DmxWorkerConfig *cfg, DmxJob *job, DmxWorkerLive *l
   }
   if (line_n > 0) {
     line[line_n] = '\0';
-    dmx_worker_handle_json_line(live, line);
+    handle_line(live, line, last_plain, sizeof last_plain);
   }
   CloseHandle(read_pipe);
 
@@ -227,7 +241,12 @@ int dmx_worker_run_job(const DmxWorkerConfig *cfg, DmxJob *job, DmxWorkerLive *l
   if (live->cancel_requested && live->exit_code != 0) {
     dmx_worker_set_msg(live->status_msg, sizeof live->status_msg, "Cancelled");
   } else if (live->exit_code != 0 && live->error_msg[0] == '\0') {
-    snprintf(live->error_msg, sizeof live->error_msg, "Worker exited with code %d", live->exit_code);
+    if (last_plain[0]) {
+      snprintf(live->error_msg, sizeof live->error_msg, "%s", last_plain);
+    } else {
+      snprintf(live->error_msg, sizeof live->error_msg, "Worker exited with code %d (0x%08lX)",
+               live->exit_code, (unsigned long)code);
+    }
   }
 
   live->running = 0;

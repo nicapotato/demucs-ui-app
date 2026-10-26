@@ -23,7 +23,9 @@ typedef struct {
   volatile float progress_pct;
   char status_msg[DMX_MSG_MAX];
   char error_msg[DMX_MSG_MAX];
-  char device[16]; /* "cuda" / "cpu" from worker status JSON; empty until known */
+  char device[16]; /* "cuda" / "dml" / "cpu" from worker status JSON; empty until known */
+  char gpu[128];   /* adapter name from the ONNX worker ("NVIDIA GeForce RTX 3080"); empty on CPU */
+  int gpu_failed;  /* ONNX worker fell back to CPU after a GPU inference error */
   int exit_code;
   int pid;
   void *os_handle; /* Windows process HANDLE; unused on POSIX */
@@ -51,6 +53,8 @@ int dmx_worker_is_native(const DmxWorkerConfig *cfg);
 const char *dmx_worker_backend_label(const DmxWorkerConfig *cfg);
 /* One-line description of the backend, e.g. "native C + Metal". */
 const char *dmx_worker_backend_detail(const DmxWorkerConfig *cfg);
+/* "DirectML", "CUDA", "CPU" ... for a worker device id; the id itself when unknown. */
+const char *dmx_worker_device_label(const char *device);
 
 /* Spawn worker for one job. Updates live asynchronously via monitor thread.
  * Call from a background thread; blocks until process exits. */

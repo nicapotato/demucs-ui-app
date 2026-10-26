@@ -19,6 +19,10 @@ typedef struct {
   char status_line[DMX_MSG_MAX];
   int write_mp3;
   int cancel_pressed;
+  /* Last device the worker reported. `live` is reset per job; these persist for the UI. */
+  char device[16];
+  char gpu[128];
+  int gpu_failed;
   Texture2D logo_tex;
   int logo_loaded;
 } DmxApp;

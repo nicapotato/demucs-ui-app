@@ -13,7 +13,7 @@ Version: [`project.conf`](project.conf). Product names:
 | Flavor | App | Zip | itch channel |
 |--------|-----|-----|--------------|
 | mlx-c (mac arm) | `DemucsMlxCArmMacSilicon.app` | `demucs-mlx-c-arm-mac-silicon.zip` | `mlx-c-arm-mac-silicon` |
-| mlx-py (mac arm) | `DemucsMlxPyArmMacSilicon.app` | `demucs-mlx-py-arm-mac-silicon.zip` | `mlx-py-arm-mac-silicon` |
+| mlx-py (mac arm, optional) | `DemucsMlxPyArmMacSilicon.app` | `demucs-mlx-py-arm-mac-silicon.zip` | `mlx-py-arm-mac-silicon` |
 | onnx (Windows) | `DemucsOnnxWindows.exe` | `demucs-onnx-windows.zip` | `onnx-windows` |
 | onnx (Linux x64) | `DemucsOnnxLinux` | `demucs-onnx-linux-x64.zip` | `onnx-linux` |
 | onnx (Mac Intel) | `DemucsOnnxMac.app` | `demucs-onnx-mac-x64.zip` | `onnx-mac-intel` |
@@ -101,10 +101,10 @@ pwsh -File app/scripts/build_windows.ps1
 
 ## Distribution
 
-1. **itch.io** — https://nicapotato.itch.io/demucs-app-dev. Standard channels: `mlx-c-arm-mac-silicon`, `mlx-py-arm-mac-silicon`, `onnx-windows`, `onnx-linux`, `onnx-mac-intel`. Optional: `cuda-windows`, `torch-windows`.
+1. **itch.io** — https://nicapotato.itch.io/demucs-app-dev. Standard channels: `mlx-c-arm-mac-silicon`, `onnx-windows`, `onnx-linux`, `onnx-mac-intel`. Optional: `mlx-py-arm-mac-silicon`, `cuda-windows`, `torch-windows`.
 2. **GitHub Release** — zip + sha256 on a `v*` tag. A Windows zip is omitted from the GitHub Release if it is ≥ 2 GB.
 
-`make ci` / `make release` (`BUILD_PLATFORM=all`) builds the standard set. Release `all` also builds Windows CUDA. Torch is `BUILD_PLATFORM=windows-torch`. Apple Silicon ONNX is not a download; that Mac stays MLX.
+`make ci` / `make release` (`BUILD_PLATFORM=all`) builds the standard set. Release `all` also builds Windows CUDA. The Python MLX Mac zip is `BUILD_PLATFORM=macos-py`. Torch is `BUILD_PLATFORM=windows-torch`. Apple Silicon ONNX is not a download; that Mac stays MLX.
 
 Secret: `BUTLER_API_KEY` on this repo.
 
@@ -115,6 +115,7 @@ make ci BUILD_PLATFORM=macos-c
 make ci BUILD_PLATFORM=windows
 make ci BUILD_PLATFORM=linux
 make ci BUILD_PLATFORM=macos-intel
+make ci BUILD_PLATFORM=macos-py
 make ci BUILD_PLATFORM=windows-torch
 make release BUILD_PLATFORM=windows-cuda PUBLISH_GH_RELEASE=false
 make release

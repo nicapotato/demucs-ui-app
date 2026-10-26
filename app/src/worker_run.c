@@ -111,6 +111,7 @@ int dmx_worker_run_job(const DmxWorkerConfig *cfg, DmxJob *job, DmxWorkerLive *l
           line[--n] = '\0';
         }
         if (line[0]) {
+          fprintf(stderr, "[worker] %s\n", line);
           snprintf(last_plain, sizeof last_plain, "%s", line);
         }
       }

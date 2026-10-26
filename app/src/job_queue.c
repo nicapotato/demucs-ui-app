@@ -160,6 +160,25 @@ int dmx_queue_remove(DmxJobQueue *q, int row) {
   return 0;
 }
 
+void dmx_format_duration(double seconds, char *out, size_t out_sz) {
+  if (!out || out_sz == 0) {
+    return;
+  }
+  if (seconds < 0.0) {
+    out[0] = '\0';
+    return;
+  }
+  long t = (long)(seconds + 0.5);
+  long h = t / 3600;
+  long m = (t / 60) % 60;
+  long s = t % 60;
+  if (h > 0) {
+    snprintf(out, out_sz, "%ld:%02ld:%02ld", h, m, s);
+  } else {
+    snprintf(out, out_sz, "%ld:%02ld", m, s);
+  }
+}
+
 const char *dmx_job_status_label(DmxJobStatus s) {
   switch (s) {
   case DMX_JOB_QUEUED:

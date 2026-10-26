@@ -159,8 +159,13 @@ static void fill_info_rows(const DmxApp *app, DmxUiLayout *L) {
   r->label = "BACKEND";
   char up[32];
   upper_copy(up, sizeof up, dmx_worker_backend_label(cfg));
-  snprintf(r->value, sizeof r->value, "%s - %s - %s (6 stems)", up, dmx_worker_backend_detail(cfg),
-           DMX_MODEL_NAME);
+  if (dmx_worker_is_onnx(cfg) && app->device[0]) {
+    snprintf(r->value, sizeof r->value, "%s - %s (%s) - %s (6 stems)", up, dmx_worker_backend_detail(cfg),
+             dmx_worker_device_label(app->device), DMX_MODEL_NAME);
+  } else {
+    snprintf(r->value, sizeof r->value, "%s - %s - %s (6 stems)", up, dmx_worker_backend_detail(cfg),
+             DMX_MODEL_NAME);
+  }
   r->col = backend_accent(app);
 
   r = &L->rows[L->n_rows++];
@@ -184,10 +189,13 @@ static void fill_info_rows(const DmxApp *app, DmxUiLayout *L) {
     r->col = DMX_COL_TEXT_FAINT;
   }
 
-  if (app->live.device[0]) {
+  if (app->device[0]) {
     r = &L->rows[L->n_rows++];
     r->label = "DEVICE";
-    if (strcmp(app->live.device, "cpu") == 0) {
+    if (app->gpu_failed) {
+      snprintf(r->value, sizeof r->value, "CPU (GPU inference failed - see console; running slower on CPU)");
+      r->col = DMX_COL_ACCENT_ORANGE;
+    } else if (strcmp(app->device, "cpu") == 0) {
 #if defined(TARGET_CPU_ARM64) && TARGET_CPU_ARM64
       snprintf(r->value, sizeof r->value, "CPU (slow - MLX on Apple Silicon recommended)");
 #elif defined(__APPLE__)
@@ -196,8 +204,11 @@ static void fill_info_rows(const DmxApp *app, DmxUiLayout *L) {
       snprintf(r->value, sizeof r->value, "CPU (slow - NVIDIA CUDA recommended)");
 #endif
       r->col = DMX_COL_ACCENT_ORANGE;
+    } else if (app->gpu[0]) {
+      snprintf(r->value, sizeof r->value, "%s - %s", dmx_worker_device_label(app->device), app->gpu);
+      r->col = DMX_COL_ACCENT_GREEN;
     } else {
-      upper_copy(r->value, sizeof r->value, app->live.device);
+      snprintf(r->value, sizeof r->value, "%s", dmx_worker_device_label(app->device));
       r->col = DMX_COL_TEXT_FAINT;
     }
   }
@@ -719,9 +730,18 @@ static int draw_jobs_table(const DmxApp *app, const DmxUiLayout *L, int *action_
     const int y2 = (int)ry + 28;
     DrawText(TextFormat("%d", i + 1), (int)c.x_idx + 8, y1, DMX_UI_ROW_FS, DMX_COL_TEXT_PLACEHOLDER);
     dmx_ui_draw_text_fit((int)c.x_name + 4, y1, (int)c.w_name - 16, j->display_name, DMX_UI_ROW_FS, tc);
-    dmx_ui_draw_text_fit((int)c.x_name + 4, y2, (int)(c.w_name + c.w_status) - 8, j->message, DMX_UI_ROW_MSG_FS,
+    const int timed = j->started_at > 0.0;
+    dmx_ui_draw_text_fit((int)c.x_name + 4, y2, (int)(timed ? c.w_name : c.w_name + c.w_status) - 8, j->message,
+                         DMX_UI_ROW_MSG_FS,
                          j->status == DMX_JOB_ERROR ? DMX_COL_ACCENT_RED : DMX_COL_TEXT_PLACEHOLDER);
     dmx_ui_draw_header((int)c.x_status + 4, y1, dmx_job_status_label(j->status), 16, job_status_color(j->status));
+    if (timed) {
+      const int live_t = j->status == DMX_JOB_RUNNING || j->status == DMX_JOB_PREPARING;
+      char t[24];
+      dmx_format_duration(live_t ? GetTime() - j->started_at : j->elapsed_s, t, sizeof t);
+      dmx_ui_draw_text_fit((int)c.x_status + 4, y2, (int)c.w_status - 8, t, DMX_UI_ROW_MSG_FS,
+                           live_t ? DMX_COL_ACCENT_BLUE : DMX_COL_TEXT_PLACEHOLDER);
+    }
 
     const char *pct = TextFormat("%3.0f%%", (double)j->progress_pct);
     int pw = MeasureText("100%", 16);

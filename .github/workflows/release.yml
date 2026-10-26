@@ -84,8 +84,7 @@ jobs:
           MLX_C='{"flavor":"mlx-c","app":"DemucsMlxCArmMacSilicon","zip":"demucs-mlx-c-arm-mac-silicon.zip","channel":"mlx-c-arm-mac-silicon"}'
           MLX_PY='{"flavor":"mlx-py","app":"DemucsMlxPyArmMacSilicon","zip":"demucs-mlx-py-arm-mac-silicon.zip","channel":"mlx-py-arm-mac-silicon"}'
           case "${INPUT_PLATFORM}" in
-            all|macos) FLAVORS="[${MLX_C},${MLX_PY}]" ;;
-            macos-c)   FLAVORS="[${MLX_C}]" ;;
+            all|macos|macos-c) FLAVORS="[${MLX_C}]" ;;
             macos-py)  FLAVORS="[${MLX_PY}]" ;;
             *)         FLAVORS='[]' ;;
           esac
@@ -1042,7 +1041,8 @@ jobs:
           generate_release_notes: true
           body: |
             ## Downloads
-            - **macOS Apple Silicon:** `demucs-mlx-c-arm-mac-silicon.zip` (native C + Metal). `demucs-mlx-py-arm-mac-silicon.zip` is the Python MLX build.
+            - **macOS Apple Silicon:** `demucs-mlx-c-arm-mac-silicon.zip` (native C + Metal)
+            - **macOS Apple Silicon Python MLX (optional):** `demucs-mlx-py-arm-mac-silicon.zip` — only when the workflow is dispatched with `macos-py`
             - **macOS Intel:** `demucs-onnx-mac-x64.zip` (ONNX Runtime CPU)
             - **Windows x64:** `demucs-onnx-windows.zip` (ONNX DirectML: NVIDIA, AMD, Intel, and CPU)
             - **Linux x64:** `demucs-onnx-linux-x64.zip` (ONNX Runtime CPU)
@@ -1050,6 +1050,6 @@ jobs:
             - **Windows torch (optional):** `demucs-torch-windows.zip` (omitted here if over 2 GB — use itch.io)
 
             Also on itch.io: https://nicapotato.itch.io/demucs-app-dev
-            Channels: `mlx-c-arm-mac-silicon`, `mlx-py-arm-mac-silicon`, `onnx-mac-intel`, `onnx-windows`, `onnx-linux`, `cuda-windows`, `torch-windows`
+            Channels: `mlx-c-arm-mac-silicon`, `onnx-mac-intel`, `onnx-windows`, `onnx-linux`. Optional: `mlx-py-arm-mac-silicon`, `cuda-windows`, `torch-windows`
           files: |
             release-assets/*

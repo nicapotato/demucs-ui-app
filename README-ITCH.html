@@ -1,36 +1,49 @@
-<p>Application that can take mp3, wav, or PSARC (Rocksmith 2014 CDLC) and extract mp3 or wav stems (isolated tracks for drums, guitar, bass, vocals, piano) using Demucs (6-stem <code>htdemucs_6s</code>).</p>
+<p>Application that can take mp3, wav, or PSARC (Rocksmith 2014 CDLC) and extract mp3 or wav stems (isolated tracks for drums, guitar, bass, vocals, piano, other) using Demucs (6-stem <code>htdemucs_6s</code>).</p>
 
-<p>Download the build that matches your machine.</p>
+<p>Download the build that matches your machine. Output is a RocknRoller-compatible folder so you can mute the chart guitar and play over the rest of the band.</p>
 
-<h1>macOS Apple Silicon — MLX C (~124 MB)</h1>
+<h1>macOS Apple Silicon — MLX C</h1>
 
 <p><code>demucs-mlx-c-arm-mac-silicon.zip</code></p>
 
-<p>Native C worker on MLX + Metal. No PyTorch. Small download, unified memory.</p>
+<p>Native C worker on MLX + Metal. No PyTorch. This is the Apple Silicon download: it is faster than the ONNX build on the same Mac.</p>
 
-<h1>macOS Apple Silicon — MLX Python (~144 MB)</h1>
+<h1>macOS Intel — ONNX</h1>
 
-<p><code>demucs-mlx-py-arm-mac-silicon.zip</code></p>
+<p><code>demucs-onnx-mac-x64.zip</code></p>
 
-<p>Frozen <a href="https://github.com/ssmall256/demucs-mlx/">demucs-mlx</a> worker (MLX + Metal). No PyTorch. Typically far faster than realtime (about 73× on an M4 Max for 4-stem <code>htdemucs</code>).</p>
+<p>Frozen ONNX Runtime worker, CPU. The Intel macOS wheel has no GPU provider.</p>
 
-<h1>Windows x64 — PyTorch (~2 GB)</h1>
+<h1>Windows x64 — ONNX</h1>
 
-<p><code>demucs-torch-windows.zip</code></p>
+<p><code>demucs-onnx-windows.zip</code></p>
 
-<p>Official Meta Demucs + PyTorch. The zip is large because it includes the CUDA runtime — you only need a recent NVIDIA driver, not a CUDA toolkit. NVIDIA GPU recommended (about 5–7 GB VRAM for the default 6-stem model). CPU works but is slow (a 4-minute track can take about a minute). AMD and Intel GPUs fall back to CPU.</p>
+<p>ONNX Runtime with DirectML. Uses an NVIDIA, AMD, or Intel GPU when one is present, and falls back to CPU.</p>
 
-<p>Default model is Demucs <code>htdemucs_6s</code>. Output is MP3 or WAV in a RocknRoller-compatible folder layout so you can mute the chart guitar and play over the rest of the band.</p>
+<h1>Linux x64 — ONNX</h1>
+
+<p><code>demucs-onnx-linux-x64.zip</code></p>
+
+<p>ONNX Runtime, CPU. AMD and Intel GPUs stay on this build.</p>
+
+<h1>Optional builds</h1>
+
+<p><code>demucs-mlx-py-arm-mac-silicon.zip</code> — Apple Silicon MLX Python worker.</p>
+
+<p><code>demucs-cuda-windows.zip</code> — Windows NVIDIA CUDA (native C). Needs a Turing or newer GPU and a recent driver.</p>
+
+<p><code>demucs-torch-windows.zip</code> — official Meta Demucs + PyTorch. Large download because it includes the CUDA runtime. AMD and Intel GPUs fall back to CPU.</p>
 
 <p><strong>Repos:</strong></p>
 
 <ul>
   <li>App: <a href="https://github.com/nicapotato/demucs-ui-app">https://github.com/nicapotato/demucs-ui-app</a></li>
-  <li>macOS workers: <a href="https://github.com/nicapotato/demucs-mac-silicon">https://github.com/nicapotato/demucs-mac-silicon</a></li>
+  <li>macOS MLX worker: <a href="https://github.com/nicapotato/demucs-mac-silicon">https://github.com/nicapotato/demucs-mac-silicon</a></li>
+  <li>ONNX worker: <a href="https://github.com/nicapotato/demucs-onnx-worker">https://github.com/nicapotato/demucs-onnx-worker</a></li>
+  <li>Windows CUDA worker: <a href="https://github.com/nicapotato/demucs-cuda">https://github.com/nicapotato/demucs-cuda</a></li>
   <li>Windows PyTorch worker: <a href="https://github.com/nicapotato/demucs-windows">https://github.com/nicapotato/demucs-windows</a></li>
-  <li>Original MLX port (MLX Python build): <a href="https://github.com/ssmall256/demucs-mlx/">https://github.com/ssmall256/demucs-mlx/</a></li>
 </ul>
 
-<p>Pairs with <a href="https://nicapotato.itch.io/rocknroller">RocknRoller</a>.</p>
+<p>Pairs with <a href="https://nicapotato.itch.io/rocknroller">RocknRoller</a>. Rock N Roller's Apple Silicon stems build uses the same MLX worker. Its Intel, Windows, and Linux stems builds use this ONNX worker.</p>
 
 <p>NICAPOTATO Discord Community: <a href="https://discord.gg/7djjRNECz">https://discord.gg/7djjRNECz</a></p>

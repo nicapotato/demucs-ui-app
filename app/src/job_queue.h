@@ -28,6 +28,8 @@ typedef struct {
   char message[DMX_MSG_MAX];
   char out_dir[DMX_PATH_MAX];
   int remove_when_done; /* drop this row after the worker thread finishes */
+  double started_at;    /* GetTime() when the worker thread was spawned; 0 = never ran */
+  double elapsed_s;     /* set when the worker thread is joined; while running, now - started_at */
 } DmxJob;
 
 typedef struct {
@@ -51,5 +53,7 @@ int dmx_queue_move(DmxJobQueue *q, int row, int delta);
 int dmx_queue_remove(DmxJobQueue *q, int row);
 void dmx_queue_drop_slot(DmxJobQueue *q, int slot);
 const char *dmx_job_status_label(DmxJobStatus s);
+/* "0:42", "12:05", "1:02:03"; empty for negative. */
+void dmx_format_duration(double seconds, char *out, size_t out_sz);
 
 #endif

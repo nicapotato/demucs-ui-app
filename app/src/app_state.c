@@ -478,6 +478,9 @@ static void *worker_thread_main(void *arg) {
     job->status = DMX_JOB_ERROR;
     snprintf(job->message, sizeof job->message, "%s",
              app->live.error_msg[0] ? app->live.error_msg : "Worker failed");
+    fprintf(stderr, "demucs: job failed (exit %d) for %s: %s\n", app->live.exit_code,
+            job->input_path, job->message);
+    fflush(stderr);
     cleanup_temp(job);
   }
 
@@ -503,6 +506,11 @@ void dmx_app_tick(DmxApp *app) {
       }
     }
   }
+  if (app->live.device[0]) {
+    snprintf(app->device, sizeof app->device, "%s", app->live.device);
+    snprintf(app->gpu, sizeof app->gpu, "%s", app->live.gpu);
+    app->gpu_failed = app->live.gpu_failed;
+  }
 
   /* Join finished worker */
   if (app->worker_thread && app->live.done && !app->live.running) {
@@ -510,6 +518,14 @@ void dmx_app_tick(DmxApp *app) {
     int drop = slot >= 0 && slot < DMX_JOB_MAX && app->queue.slot_used[slot] &&
                app->queue.jobs[slot].remove_when_done;
     dmx_thread_join(app->worker_thread);
+    if (slot >= 0 && slot < DMX_JOB_MAX && app->queue.slot_used[slot]) {
+      DmxJob *fj = &app->queue.jobs[slot];
+      if (fj->started_at > 0.0) {
+        fj->elapsed_s = GetTime() - fj->started_at;
+        fprintf(stderr, "demucs: %s %s in %.1fs\n", fj->display_name, dmx_job_status_label(fj->status),
+                fj->elapsed_s);
+      }
+    }
     app->worker_thread = NULL;
     app->queue.active_slot = -1;
     app->cancel_pressed = 0;
@@ -538,6 +554,8 @@ void dmx_app_tick(DmxApp *app) {
       wa->job_slot = idx;
       app->queue.active_slot = idx;
       dmx_worker_live_reset(&app->live);
+      next->started_at = GetTime();
+      next->elapsed_s = 0.0;
       if (dmx_thread_spawn(&app->worker_thread, worker_thread_main, wa) != 0) {
         free(wa);
         next->status = DMX_JOB_ERROR;

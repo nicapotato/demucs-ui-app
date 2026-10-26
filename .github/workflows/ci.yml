@@ -77,8 +77,7 @@ jobs:
           MLX_C='{"flavor":"mlx-c","app":"DemucsMlxCArmMacSilicon","zip":"demucs-mlx-c-arm-mac-silicon.zip","channel":"mlx-c-arm-mac-silicon"}'
           MLX_PY='{"flavor":"mlx-py","app":"DemucsMlxPyArmMacSilicon","zip":"demucs-mlx-py-arm-mac-silicon.zip","channel":"mlx-py-arm-mac-silicon"}'
           case "${INPUT_PLATFORM}" in
-            all|macos) FLAVORS="[${MLX_C},${MLX_PY}]" ;;
-            macos-c)   FLAVORS="[${MLX_C}]" ;;
+            all|macos|macos-c) FLAVORS="[${MLX_C}]" ;;
             macos-py)  FLAVORS="[${MLX_PY}]" ;;
             *)         FLAVORS='[]' ;;
           esac

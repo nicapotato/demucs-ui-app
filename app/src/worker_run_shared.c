@@ -299,6 +299,25 @@ const char *dmx_worker_backend_detail(const DmxWorkerConfig *cfg) {
   return dev ? "MLX Python via python -m" : "frozen MLX Python worker";
 }
 
+const char *dmx_worker_device_label(const char *device) {
+  static const struct {
+    const char *id;
+    const char *label;
+  } k[] = {
+      {"cpu", "CPU"},     {"dml", "DirectML"}, {"cuda", "CUDA"}, {"tensorrt", "TensorRT"},
+      {"coreml", "CoreML"}, {"metal", "Metal"},  {"mps", "Metal"}, {"gpu", "GPU"},
+  };
+  if (!device || !device[0]) {
+    return "";
+  }
+  for (size_t i = 0; i < sizeof k / sizeof k[0]; i++) {
+    if (strcmp(device, k[i].id) == 0) {
+      return k[i].label;
+    }
+  }
+  return device;
+}
+
 int dmx_worker_resolve(DmxWorkerConfig *cfg, char *err, size_t err_sz) {
   if (!cfg) {
     return -1;
@@ -527,6 +546,8 @@ int dmx_worker_resolve(DmxWorkerConfig *cfg, char *err, size_t err_sz) {
   return 0;
 }
 
+/* Decode the JSON string value of `key`. The worker writes ensure_ascii JSON, so
+ * \uXXXX outside ASCII becomes '?'. */
 static void copy_json_string(const char *line, const char *key, char *out, size_t out_sz) {
   if (!out || out_sz == 0) {
     return;
@@ -536,17 +557,46 @@ static void copy_json_string(const char *line, const char *key, char *out, size_
   if (!p) {
     return;
   }
-  p = strchr(p, ':');
+  p = strchr(p + strlen(key), ':');
   if (!p) {
     return;
   }
   p++;
-  while (*p == ' ' || *p == '"') {
+  while (*p == ' ') {
     p++;
   }
+  if (*p != '"') {
+    return;
+  }
+  p++;
   size_t i = 0;
-  while (*p && *p != '"' && *p != ',' && *p != '}' && i + 1 < out_sz) {
-    out[i++] = *p++;
+  while (*p && *p != '"' && i + 1 < out_sz) {
+    char c = *p++;
+    if (c == '\\' && *p) {
+      char e = *p++;
+      switch (e) {
+      case 'n':
+      case 'r':
+      case 't':
+        c = ' ';
+        break;
+      case 'u': {
+        unsigned v = 0;
+        int k = 0;
+        for (; k < 4 && p[k]; k++) {
+          char h = p[k];
+          v = v * 16u + (unsigned)(h >= 'a' ? h - 'a' + 10 : h >= 'A' ? h - 'A' + 10 : h - '0');
+        }
+        p += k;
+        c = (v >= 0x20 && v < 0x7f) ? (char)v : '?';
+        break;
+      }
+      default:
+        c = e;
+        break;
+      }
+    }
+    out[i++] = c;
   }
   out[i] = '\0';
 }
@@ -573,32 +623,39 @@ void dmx_worker_handle_json_line(DmxWorkerLive *live, const char *line) {
     live->progress_pct = 100.0f;
     dmx_worker_set_msg(live->status_msg, sizeof live->status_msg, "Done");
   } else if (strstr(line, "\"error\"")) {
-    const char *msg = strstr(line, "\"message\"");
-    if (msg) {
-      msg = strchr(msg, ':');
-      if (msg) {
-        msg++;
-        while (*msg == ' ' || *msg == '"') {
-          msg++;
-        }
-        char tmp[DMX_MSG_MAX];
-        size_t i = 0;
-        while (*msg && *msg != '"' && i + 1 < sizeof tmp) {
-          tmp[i++] = *msg++;
-        }
-        tmp[i] = '\0';
-        dmx_worker_set_msg(live->error_msg, sizeof live->error_msg, tmp);
-      }
+    char tmp[DMX_MSG_MAX];
+    copy_json_string(line, "\"message\"", tmp, sizeof tmp);
+    if (tmp[0]) {
+      dmx_worker_set_msg(live->error_msg, sizeof live->error_msg, tmp);
+      fprintf(stderr, "dmx_worker: error: %s\n", tmp);
+      fflush(stderr);
     }
   } else if (strstr(line, "\"status\"")) {
     char device[32];
+    char gpu[sizeof live->gpu];
     copy_json_string(line, "\"device\"", device, sizeof device);
+    copy_json_string(line, "\"gpu\"", gpu, sizeof gpu);
     if (device[0]) {
       snprintf(live->device, sizeof live->device, "%s", device);
+      if (strcmp(device, "cpu") == 0) {
+        live->gpu[0] = '\0';
+      }
     }
-    if (strstr(line, "loading_model")) {
+    if (gpu[0]) {
+      snprintf(live->gpu, sizeof live->gpu, "%s", gpu);
+    }
+    if (strstr(line, "fallback_cpu")) {
+      live->gpu_failed = 1;
+      char reason[DMX_MSG_MAX];
+      copy_json_string(line, "\"reason\"", reason, sizeof reason);
+      fprintf(stderr, "dmx_worker: GPU inference failed, retrying on CPU: %s\n", reason);
+      fflush(stderr);
+      dmx_worker_set_msg(live->status_msg, sizeof live->status_msg,
+                         "GPU failed, retrying on CPU (slower)...");
+    } else if (strstr(line, "loading_model")) {
       if (live->device[0]) {
-        snprintf(live->status_msg, sizeof live->status_msg, "Loading model (%s)...", live->device);
+        snprintf(live->status_msg, sizeof live->status_msg, "Loading model (%s)...",
+                 dmx_worker_device_label(live->device));
       } else {
         dmx_worker_set_msg(live->status_msg, sizeof live->status_msg, "Loading model...");
       }
@@ -606,8 +663,12 @@ void dmx_worker_handle_json_line(DmxWorkerLive *live, const char *line) {
       if (strcmp(live->device, "cpu") == 0) {
         dmx_worker_set_msg(live->status_msg, sizeof live->status_msg,
                            "Model ready (CPU — a 4-minute track may take about a minute)");
+      } else if (live->gpu[0]) {
+        snprintf(live->status_msg, sizeof live->status_msg, "Model ready (%s on %s)",
+                 dmx_worker_device_label(live->device), live->gpu);
       } else if (live->device[0]) {
-        snprintf(live->status_msg, sizeof live->status_msg, "Model ready (%s)", live->device);
+        snprintf(live->status_msg, sizeof live->status_msg, "Model ready (%s)",
+                 dmx_worker_device_label(live->device));
       } else {
         dmx_worker_set_msg(live->status_msg, sizeof live->status_msg, "Model ready");
       }
