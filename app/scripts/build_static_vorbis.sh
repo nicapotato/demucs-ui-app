@@ -25,8 +25,19 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
 fetch() {
-  local url="$1" dest="$2"
-  curl -fL --retry 3 --retry-delay 2 -o "$dest" "$url"
+  local dest="$1"
+  shift
+  local url
+  for url in "$@"; do
+    echo "fetch $url"
+    if curl -fL --http1.1 --retry 5 --retry-all-errors --retry-delay 2 --connect-timeout 20 -o "$dest" "$url"; then
+      return 0
+    fi
+    echo "fetch failed: $url" >&2
+    rm -f "$dest"
+  done
+  echo "ERROR: all downloads failed for $dest" >&2
+  return 1
 }
 
 # libvorbis 1.3.7 injects -force_cpusubtype_ALL into Darwin CFLAGS. Apple Clang
@@ -46,8 +57,14 @@ if command -v xcrun >/dev/null 2>&1; then
 fi
 
 echo "Building static libogg ${OGG_VER} and libvorbis ${VORBIS_VER} -> ${PREFIX}"
-fetch "https://downloads.xiph.org/releases/ogg/libogg-${OGG_VER}.tar.gz" "$tmp/ogg.tar.gz"
-fetch "https://downloads.xiph.org/releases/vorbis/libvorbis-${VORBIS_VER}.tar.gz" "$tmp/vorbis.tar.gz"
+fetch "$tmp/ogg.tar.gz" \
+  "https://github.com/xiph/ogg/releases/download/v${OGG_VER}/libogg-${OGG_VER}.tar.gz" \
+  "https://ftp.osuosl.org/pub/xiph/releases/ogg/libogg-${OGG_VER}.tar.gz" \
+  "https://downloads.xiph.org/releases/ogg/libogg-${OGG_VER}.tar.gz"
+fetch "$tmp/vorbis.tar.gz" \
+  "https://github.com/xiph/vorbis/releases/download/v${VORBIS_VER}/libvorbis-${VORBIS_VER}.tar.gz" \
+  "https://ftp.osuosl.org/pub/xiph/releases/vorbis/libvorbis-${VORBIS_VER}.tar.gz" \
+  "https://downloads.xiph.org/releases/vorbis/libvorbis-${VORBIS_VER}.tar.gz"
 tar -xzf "$tmp/ogg.tar.gz" -C "$tmp"
 tar -xzf "$tmp/vorbis.tar.gz" -C "$tmp"
 strip_obsolete_darwin_flag "$tmp/libogg-${OGG_VER}"
