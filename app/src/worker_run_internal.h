@@ -4,6 +4,8 @@
 #include "worker_run.h"
 
 void dmx_worker_set_msg(char *buf, size_t n, const char *s);
+/* Control bytes (CR, ESC, ...) become ' ' or '?' so worker output cannot rewrite the console line. */
+void dmx_worker_sanitize_line(char *s);
 void dmx_worker_handle_json_line(DmxWorkerLive *live, const char *line);
 int dmx_worker_file_exists(const char *p);
 void dmx_worker_dirname_copy(const char *path, char *out, size_t out_sz);

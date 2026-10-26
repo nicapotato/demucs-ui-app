@@ -71,7 +71,8 @@ static void append_quoted(char *cmd, size_t cmd_sz, const char *arg) {
 
 /* stdout and stderr share one pipe: JSON events drive the UI, anything else
  * (Python tracebacks, ORT logs) is echoed to the console. */
-static void handle_line(DmxWorkerLive *live, const char *line, char *last_plain, size_t last_sz) {
+static void handle_line(DmxWorkerLive *live, char *line, char *last_plain, size_t last_sz) {
+  dmx_worker_sanitize_line(line);
   if (strstr(line, "\"event\"")) {
     dmx_worker_handle_json_line(live, line);
   } else if (line[0]) {
@@ -198,7 +199,7 @@ int dmx_worker_run_job(const DmxWorkerConfig *cfg, DmxJob *job, DmxWorkerLive *l
   CloseHandle(pi.hThread);
 
   char buf[4096];
-  char line[2048];
+  char line[8192];
   char last_plain[DMX_MSG_MAX];
   last_plain[0] = '\0';
   size_t line_n = 0;

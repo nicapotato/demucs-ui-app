@@ -98,7 +98,7 @@ int dmx_worker_run_job(const DmxWorkerConfig *cfg, DmxJob *job, DmxWorkerLive *l
   live->pid = (int)pid;
 
   FILE *fp = fdopen(pipefd[0], "r");
-  char line[2048];
+  char line[8192];
   char last_plain[DMX_MSG_MAX];
   last_plain[0] = '\0';
   if (fp) {
@@ -110,6 +110,7 @@ int dmx_worker_run_job(const DmxWorkerConfig *cfg, DmxJob *job, DmxWorkerLive *l
         while (n > 0 && (line[n - 1] == '\n' || line[n - 1] == '\r')) {
           line[--n] = '\0';
         }
+        dmx_worker_sanitize_line(line);
         if (line[0]) {
           fprintf(stderr, "[worker] %s\n", line);
           snprintf(last_plain, sizeof last_plain, "%s", line);

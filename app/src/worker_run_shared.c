@@ -38,6 +38,15 @@ void dmx_worker_live_reset(DmxWorkerLive *live) {
   live->exit_code = -1;
 }
 
+void dmx_worker_sanitize_line(char *s) {
+  for (; s && *s; s++) {
+    unsigned char c = (unsigned char)*s;
+    if (c < 0x20 || c == 0x7f) {
+      *s = (c == '\t' || c == '\r' || c == '\n') ? ' ' : '?';
+    }
+  }
+}
+
 void dmx_worker_set_msg(char *buf, size_t n, const char *s) {
   if (!buf || n == 0) {
     return;
@@ -644,7 +653,15 @@ void dmx_worker_handle_json_line(DmxWorkerLive *live, const char *line) {
     if (gpu[0]) {
       snprintf(live->gpu, sizeof live->gpu, "%s", gpu);
     }
-    if (strstr(line, "fallback_cpu")) {
+    if (strstr(line, "retry_gpu")) {
+      char reason[DMX_MSG_MAX];
+      copy_json_string(line, "\"reason\"", reason, sizeof reason);
+      fprintf(stderr, "dmx_worker: GPU inference failed, retrying DirectML without graph fusion: %s\n",
+              reason);
+      fflush(stderr);
+      dmx_worker_set_msg(live->status_msg, sizeof live->status_msg,
+                         "GPU failed, retrying DirectML without graph fusion...");
+    } else if (strstr(line, "fallback_cpu")) {
       live->gpu_failed = 1;
       char reason[DMX_MSG_MAX];
       copy_json_string(line, "\"reason\"", reason, sizeof reason);
