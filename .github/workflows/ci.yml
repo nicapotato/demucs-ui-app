@@ -268,7 +268,7 @@ jobs:
           ffmpeg -y -hide_banner -loglevel error -f lavfi -i "sine=frequency=440:duration=5" \
             -ac 2 -ar 44100 /tmp/dmx_ci_in/tone5s.mp3
           app/dist/DemucsOnnxMac.app/Contents/MacOS/DemucsOnnxMac \
-            --headless /tmp/dmx_ci_in/tone5s.mp3 --out /tmp/dmx_ci_out --mp3
+            --headless --cpu /tmp/dmx_ci_in/tone5s.mp3 --out /tmp/dmx_ci_out --mp3
           for s in drums bass other vocals guitar piano; do
             test -f "/tmp/dmx_ci_out/tone5s/${s}.mp3"
           done
@@ -383,7 +383,7 @@ jobs:
           ffmpeg -y -hide_banner -loglevel error -f lavfi -i "sine=frequency=440:duration=5" \
             -ac 2 -ar 44100 /tmp/dmx_ci_in/tone5s.mp3
           app/dist/DemucsOnnxLinux/DemucsOnnxLinux \
-            --headless /tmp/dmx_ci_in/tone5s.mp3 --out /tmp/dmx_ci_out --mp3
+            --headless --cpu /tmp/dmx_ci_in/tone5s.mp3 --out /tmp/dmx_ci_out --mp3
           for s in drums bass other vocals guitar piano; do
             test -f "/tmp/dmx_ci_out/tone5s/${s}.mp3"
           done
@@ -545,7 +545,7 @@ jobs:
           $out = Join-Path $env:TEMP "dmx_ci_out"
           New-Item -ItemType Directory -Force -Path $in, $out | Out-Null
           ffmpeg -y -hide_banner -loglevel error -f lavfi -i "sine=frequency=440:duration=5" -ac 2 -ar 44100 "$in\tone5s.mp3"
-          & "app\dist\DemucsOnnxWindows\DemucsOnnxWindows.exe" --headless "$in\tone5s.mp3" --out $out --mp3
+          & "app\dist\DemucsOnnxWindows\DemucsOnnxWindows.exe" --headless --cpu "$in\tone5s.mp3" --out $out --mp3
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           foreach ($s in @("drums","bass","other","vocals","guitar","piano")) {
             $p = Join-Path $out "tone5s\$s.mp3"

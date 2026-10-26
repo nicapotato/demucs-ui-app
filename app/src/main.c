@@ -146,13 +146,10 @@ static int run_headless(DmxApp *app) {
       }
     }
 
-    if (!app->worker_thread && app->queue.active_slot < 0 && !app->processing_enabled) {
-      fprintf(stderr, "ERROR: %s\n", app->status_line);
-      return 1;
-    }
     if (!app->worker_thread && app->queue.active_slot < 0) {
       int failed = 0;
-      if (!jobs_pending_or_failed(app, &failed)) {
+      int pending = jobs_pending_or_failed(app, &failed);
+      if (!pending) {
         for (int i = 0; i < app->queue.count; ++i) {
           const DmxJob *j = dmx_queue_at(&app->queue, i);
           if (!j) {
@@ -160,7 +157,19 @@ static int run_headless(DmxApp *app) {
           }
           printf("done: %s -> %s\n", j->input_path, j->message);
         }
-        return failed ? 1 : 0;
+        /* A finished queue also clears processing_enabled. That is success
+         * when nothing failed; only a real failure is an error exit. */
+        if (failed) {
+          fprintf(stderr, "ERROR: %s\n",
+                  app->status_line[0] ? app->status_line : "one or more jobs failed");
+          return 1;
+        }
+        return 0;
+      }
+      /* GPU failure stops the queue while later jobs are still queued. */
+      if (!app->processing_enabled) {
+        fprintf(stderr, "ERROR: %s\n", app->status_line[0] ? app->status_line : "queue stopped");
+        return 1;
       }
     }
 
